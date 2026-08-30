@@ -24,8 +24,9 @@ static NSString *DLSRewriteStatusText(NSString *text)
     NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
+        NSString *custom = settings[@"custom5GString"];
         if (value == 5) return @"5GA";
-        if (value == 99 && [settings[@"custom5GString"] length] > 0) return settings[@"custom5GString"];
+        if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
     NSSet *fourG = [NSSet setWithObjects:@"4G", @"LTE", @"LTE+", @"LTE-A", nil];
@@ -42,6 +43,19 @@ static NSString *DLSRewriteStatusText(NSString *text)
 
 static __thread BOOL DLSApplyingText;
 
+static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
+{
+    NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
+    UIFont *font = attributes[NSFontAttributeName];
+    if (font != nil) {
+        attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
+                                                                  size:MAX(1.0, font.pointSize * 0.70)];
+    }
+    // Do not force a positive baseline offset: it makes A/+ visibly float.
+    [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
+    return attributes;
+}
+
 static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
 {
     if (replacement.length == 0) return source;
@@ -50,20 +64,31 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     if (source.length == 0) return updated;
 
     NSRange prefixRange = NSMakeRange(0, 0);
-    NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange];
-    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
-    [updated setAttributes:prefixAttributes ?: @{}
-                     range:NSMakeRange(0, prefixLength)];
+    NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
 
-    // Native 5G+ / 5G UC / 5G UWB use a separate, thinner suffix run.
-    // Reuse the source suffix attributes for every replacement suffix.
-    if (replacement.length > 2) {
-        NSUInteger sourceSuffixIndex = source.length > 2 ? 2 : source.length - 1;
-        NSRange suffixRange = NSMakeRange(0, 0);
-        NSDictionary *suffixAttributes = [source attributesAtIndex:sourceSuffixIndex
-                                                        effectiveRange:&suffixRange];
-        [updated setAttributes:suffixAttributes ?: prefixAttributes
-                         range:NSMakeRange(2, replacement.length - 2)];
+    // 4G+ must remain vertically centered. Do not apply the compact 5G suffix style.
+    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"];
+    if (!compact5GSuffix) {
+        [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
+        return updated;
+    }
+
+    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
+    [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
+
+    // Reuse the native compact suffix run when available; otherwise derive it
+    // from the same font without changing the baseline.
+    NSUInteger suffixIndex = NSMaxRange(prefixRange);
+    NSDictionary *suffixAttributes = nil;
+    if (suffixIndex < source.length) {
+        suffixAttributes = [source attributesAtIndex:suffixIndex effectiveRange:NULL];
+    }
+    if (suffixAttributes == nil) {
+        suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+    }
+    if (replacement.length > prefixLength) {
+        [updated setAttributes:suffixAttributes
+                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
     }
     return updated;
 }
@@ -84,12 +109,11 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
     if (color != nil) prefix[NSForegroundColorAttributeName] = color;
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
-    if (replacement.length > 2 && font != nil) {
-        NSMutableDictionary *suffix = [prefix mutableCopy];
+    NSMutableDictionary *suffix = [prefix mutableCopy];
+    if (replacement.length > 2 && [replacement hasPrefix:@"5G"] && font != nil) {
         UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
                                                     size:MAX(1.0, font.pointSize * 0.70)];
         suffix[NSFontAttributeName] = suffixFont;
-        suffix[NSBaselineOffsetAttributeName] = @(font.pointSize * 0.18);
         [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
     }
     return result;
@@ -329,10 +353,11 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnection5GUC;
             case 5:
-                // 5Gᴀ is a display variant, so use the stable 5G type.
-                return NewConnection5G;
-            default:
-                break;
+                // Use the native 5G+ renderer as the host for the compact suffix.
+                return NewConnection5GPlus;
+            case 99:
+                // Custom 5G text also needs the native compact-suffix style.
+                return NewConnection5GPlus;
         }
     }
 

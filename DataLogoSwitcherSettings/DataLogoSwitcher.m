@@ -226,6 +226,7 @@ static BOOL run_command(const char *path, char *const argv[])
 
 - (void)loadView {
   	[super loadView];
+    self.title = @"5G-A";
   	
     NSMutableDictionary *settings = [[NSMutableDictionary alloc] initWithContentsOfFile:SettingsPath];
     if (settings == nil) {
