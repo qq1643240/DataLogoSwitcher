@@ -25,16 +25,21 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Prepare Theos directory
-        run: mkdir -p "$GITHUB_WORKSPACE/theos"
+      - name: Install build dependencies
+        run: |
+          brew install make ldid
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Install Theos and patched SDKs
-        uses: waruhachi/theos-action@main
-        with:
-          theos-src: ${{ matrix.theos_repo }}
-          theos-branch: master
-          sdks-src: theos/sdks
-          sdks-branch: master
+        env:
+          THEOS_REPO: ${{ matrix.theos_repo }}
+        run: |
+          set -euo pipefail
+          theos_dir="$RUNNER_TEMP/theos"
+          git clone --depth 1 "https://github.com/${THEOS_REPO}.git" "$theos_dir"
+          git clone --depth 1 "https://github.com/theos/sdks.git" "$theos_dir/sdks"
+          echo "THEOS=$theos_dir" >> "$GITHUB_ENV"
+          test -d "$theos_dir/sdks/iPhoneOS16.5.sdk"
 
       - name: Build package
         run: |
