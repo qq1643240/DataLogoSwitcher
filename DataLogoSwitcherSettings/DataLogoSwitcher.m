@@ -110,41 +110,41 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE",
                 @"LTE-A",
                 @"4G+",
+                @"4Gᴀ",
                 @"5GE",
                 @"5G",
                 @"5G+",
                 @"5G UWB",
                 @"5G UC",
-                @"4Gᴀ",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@10,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
                 @"4G+",
+                @"4Gᴀ",
                 @"5GE",
                 @"5G",
                 @"5G+",
                 @"5G UWB",
-                @"4Gᴀ",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@10,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE+",
-                @"5GE",
+                @"4G+",
                 @"4Gᴀ",
+                @"5GE",
                 @"自定义"
             ] forKeys:logo4G.values];
         }

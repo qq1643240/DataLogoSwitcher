@@ -22,8 +22,14 @@ static NSString *DLSRewriteStatusText(NSString *text)
     NSDictionary *settings = DLSSettings();
 
     NSSet *fourGCompact = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", nil];
-    if ([fourGCompact containsObject:text] && [settings[@"4G"] integerValue] == 10) {
-        return @"4Gᴀ";
+    NSInteger fourGValue = [settings[@"4G"] integerValue];
+
+    // Apply built-in 4G choices directly in the iOS 17 text path.
+    // The modem-type hook supplies the native host glyphs, while this keeps
+    // the visible result deterministic for STUIStatusBarStringView.
+    if ([fourGCompact containsObject:text]) {
+        if (fourGValue == 4) return @"4G+";
+        if (fourGValue == 5) return @"4Gᴀ";
     }
 
     NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
@@ -34,9 +40,14 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    NSSet *fourG = [NSSet setWithObjects:@"4G", @"LTE", @"LTE+", @"LTE-A", nil];
-    if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 99 && [settings[@"custom4GString"] length] > 0) {
-        return settings[@"custom4GString"];
+    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", nil];
+    NSInteger selected4G = [settings[@"4G"] integerValue];
+    if ([fourG containsObject:text]) {
+        if (selected4G == 4) return @"4G+";
+        if (selected4G == 5) return @"4Gᴀ";
+        if (selected4G == 99 && [settings[@"custom4GString"] length] > 0) {
+            return settings[@"custom4GString"];
+        }
     }
 
     NSSet *threeG = [NSSet setWithObjects:@"3G", @"H", @"H+", nil];
@@ -332,18 +343,18 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnectionLtePlus;
             case 5:
-                return NewConnection5GE;
-            case 6:
-                return NewConnection5G;
-            case 7:
-                return NewConnection5GPlus;
-            case 8:
-                return NewConnection5GUWB;
-            case 9:
-                return NewConnection5GUC;
-            case 10:
-                // Use native LTE+ as the host for the compact 4G suffix.
+                // Use native LTE+ as the host for 4Gᴀ.
                 return NewConnectionLtePlus;
+            case 6:
+                return NewConnection5GE;
+            case 7:
+                return NewConnection5G;
+            case 8:
+                return NewConnection5GPlus;
+            case 9:
+                return NewConnection5GUWB;
+            case 10:
+                return NewConnection5GUC;
             case 99:
                 // Use native LTE+ as the host for custom 4G text.
                 return NewConnectionLtePlus;
@@ -402,8 +413,17 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLteA ||
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 10) {
+        [defaults[@"4G"] intValue] == 5) {
         return @"4Gᴀ";
+    }
+
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
+        connectionType == NewConnection5GE) &&
+        [defaults[@"4G"] intValue] == 4) {
+        return @"4G+";
     }
 
     if ((connectionType == NewConnection4GOverride ||
@@ -483,8 +503,10 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnectionLtePlus;
             case 5:
+                return NewConnectionLtePlus;
+            case 6:
                 return NewConnection5GE;
-            case 10:
+            case 99:
                 return NewConnectionLtePlus;
             default:
                 break;
@@ -509,8 +531,17 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLteA ||
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 10) {
+        [defaults[@"4G"] intValue] == 5) {
         return @"4Gᴀ";
+    }
+
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
+        connectionType == NewConnection5GE) &&
+        [defaults[@"4G"] intValue] == 4) {
+        return @"4G+";
     }
 
     if ((connectionType == NewConnection4GOverride ||
