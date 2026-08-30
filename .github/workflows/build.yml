@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  SDK_VERSION: 16.5
-
 jobs:
   build:
     name: Build ${{ matrix.scheme }}
@@ -28,26 +25,13 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        run: brew install ldid xz
-
-      - name: Install Theos
-        env:
-          THEOS_REPO: ${{ matrix.theos_repo }}
-        run: |
-          git clone --depth 1 "https://github.com/${THEOS_REPO}.git" "$RUNNER_TEMP/theos"
-          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
-
-      - name: Install iPhoneOS SDK
-        run: |
-          set -euo pipefail
-          sdk_dir="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
-          mkdir -p "$THEOS/sdks"
-          curl --fail --location --retry 5 \
-            "https://github.com/theos/sdks/releases/download/${SDK_VERSION}/iPhoneOS${SDK_VERSION}.sdk.tar.xz" \
-            -o "$RUNNER_TEMP/iPhoneOS.sdk.tar.xz"
-          tar -xJf "$RUNNER_TEMP/iPhoneOS.sdk.tar.xz" -C "$THEOS/sdks"
-          test -d "$sdk_dir"
+      - name: Install Theos and patched SDKs
+        uses: waruhachi/theos-action@main
+        with:
+          theos-src: ${{ matrix.theos_repo }}
+          theos-branch: master
+          sdks-src: theos/sdks
+          sdks-branch: master
 
       - name: Build package
         run: |
