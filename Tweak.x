@@ -48,10 +48,11 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
     UIFont *font = attributes[NSFontAttributeName];
     if (font != nil) {
+        // The native 5G+ suffix is materially smaller than the 5G body.
+        // Use the same family/weight, with compact metrics for A/custom suffixes.
         attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
-                                                                  size:MAX(1.0, font.pointSize * 0.70)];
+                                                                  size:MAX(1.0, font.pointSize * 0.58)];
     }
-    // Do not force a positive baseline offset: it makes A/+ visibly float.
     [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
     return attributes;
 }
@@ -76,12 +77,11 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // Reuse the native compact suffix run when available; otherwise derive it
-    // from the same font without changing the baseline.
-    NSUInteger suffixIndex = NSMaxRange(prefixRange);
+    // 5G A/custom text is deliberately mapped to NewConnection5GPlus.
+    // Its third glyph (+) is the authoritative native compact suffix style.
     NSDictionary *suffixAttributes = nil;
-    if (suffixIndex < source.length) {
-        suffixAttributes = [source attributesAtIndex:suffixIndex effectiveRange:NULL];
+    if (compact5GSuffix && source.length > 2) {
+        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
     }
     if (suffixAttributes == nil) {
         suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
@@ -112,7 +112,7 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
     NSMutableDictionary *suffix = [prefix mutableCopy];
     if (replacement.length > 2 && [replacement hasPrefix:@"5G"] && font != nil) {
         UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
-                                                    size:MAX(1.0, font.pointSize * 0.70)];
+                                                    size:MAX(1.0, font.pointSize * 0.58)];
         suffix[NSFontAttributeName] = suffixFont;
         [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
     }

@@ -224,6 +224,11 @@ static BOOL run_command(const char *path, char *const argv[])
     return _specifiers;
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.title = @"5G-A";
+}
+
 - (void)loadView {
   	[super loadView];
     self.title = @"5G-A";
