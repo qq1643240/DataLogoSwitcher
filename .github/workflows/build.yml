@@ -25,6 +25,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Prepare Theos directory
+        run: mkdir -p "$GITHUB_WORKSPACE/theos"
+
       - name: Install Theos and patched SDKs
         uses: waruhachi/theos-action@main
         with:
