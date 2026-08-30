@@ -90,9 +90,13 @@ static BOOL DLSIsStatusBarObject(id object)
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
     NSString *replacement = DLSRewriteStatusText(text);
-    if (replacement.length > 0 && self.attributedText.length > 0 && !DLSApplyingText) {
+    id currentAttributed = nil;
+    if (!DLSApplyingText) {
+        currentAttributed = ((id (*)(id, SEL))objc_msgSend)(self, @selector(attributedText));
+    }
+    if (replacement.length > 0 && [currentAttributed isKindOfClass:NSAttributedString.class] && currentAttributed.length > 0 && !DLSApplyingText) {
         DLSApplyingText = YES;
-        [self setAttributedText:DLSAttributedReplacement(self.attributedText, replacement)];
+        ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSAttributedReplacement(currentAttributed, replacement));
         DLSApplyingText = NO;
         return;
     }
