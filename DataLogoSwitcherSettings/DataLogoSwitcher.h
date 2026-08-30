@@ -5,6 +5,7 @@
 #import <Preferences/PSListController.h>
 #import <objc/runtime.h>
 #import <spawn.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <rootless.h>
 
 #define UserDefaultsChangedNotification "tw.hiraku.datalogoswitcher"
@@ -33,8 +34,25 @@ id getUserDefaultForKey(NSString *key) {
 }
 
 void setUserDefaultForKey(NSString *key, id value) {
-    NSMutableDictionary *defaults = [NSMutableDictionary dictionary];
-    [defaults addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:SettingsPath]];
-    [defaults setObject:value forKey:key];
+    NSMutableDictionary *defaults = [NSMutableDictionary dictionaryWithContentsOfFile:SettingsPath];
+    if (defaults == nil) {
+        defaults = [NSMutableDictionary dictionary];
+    }
+
+    if (value != nil) {
+        defaults[key] = value;
+    } else {
+        [defaults removeObjectForKey:key];
+    }
+
+    // Keep the write atomic so SpringBoard never reads a partial plist.
     [defaults writeToFile:SettingsPath atomically:YES];
+    [[NSFileManager defaultManager] setAttributes:@{NSFileModificationDate: [NSDate date]}
+                                      ofItemAtPath:SettingsPath
+                                             error:NULL];
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                          CFSTR(UserDefaultsChangedNotification),
+                                          NULL,
+                                          NULL,
+                                          TRUE);
 }

@@ -1,12 +1,27 @@
 #import "DataLogoSwitcher.h"
 #import <version.h>
+#import <errno.h>
+#import <sys/wait.h>
+#include <unistd.h>
 
-static void easy_spawn(const char* args[]) 
+static BOOL run_command(const char *path, char *const argv[])
 {
-    pid_t pid;
-    int status;
-    posix_spawn(&pid, args[0], NULL, NULL, (char* const*)args, NULL);
-    waitpid(pid, &status, WEXITED);
+    if (access(path, X_OK) != 0) {
+        return NO;
+    }
+
+    pid_t pid = 0;
+    int status = 0;
+    int result = posix_spawn(&pid, path, NULL, NULL, argv, NULL);
+    if (result != 0) {
+        return NO;
+    }
+
+    if (waitpid(pid, &status, 0) < 0) {
+        return NO;
+    }
+
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 //============================================================================================================
@@ -143,13 +158,14 @@ static void easy_spawn(const char* args[])
             PSSpecifier *logo5G = [PSSpecifier preferenceSpecifierNamed:@"5G Logo" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
             [logo5G setIdentifier:@"5G"];
 
-            logo5G.values = @[@0,@1,@2,@3,@4,@99];
+            logo5G.values = @[@0,@1,@2,@3,@4,@5,@99];
             logo5G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"Default",
                 @"5G",
                 @"5G Plus",
                 @"5G UWB",
                 @"5G UC",
+                @"5Gᴀ",
                 @"Custom"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
@@ -208,9 +224,9 @@ static void easy_spawn(const char* args[])
 - (void)loadView {
   	[super loadView];
   	
-    NSMutableDictionary* settings = [[NSMutableDictionary alloc] initWithContentsOfFile:SettingsPath];
-    if(![[NSFileManager defaultManager] fileExistsAtPath:SettingsPath]) {
-        settings = [[NSMutableDictionary alloc] initWithObjectsAndKeys: @0, @"3G", 
+    NSMutableDictionary *settings = [[NSMutableDictionary alloc] initWithContentsOfFile:SettingsPath];
+    if (settings == nil) {
+        settings = [[NSMutableDictionary alloc] initWithObjectsAndKeys: @0, @"3G",
                                                                         @0, @"4G",
                                                                         @0, @"5G",
                                                                         nil];
@@ -228,14 +244,27 @@ static void easy_spawn(const char* args[])
 }
 
 -(void)respring {
-    sleep(1);
-    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0 && [[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@"/usr/bin/killall")]) {
-        easy_spawn((const char *[]){ROOT_PATH("/usr/bin/killall"), "lsd", "SpringBoard", NULL});
-        easy_spawn((const char *[]){ROOT_PATH("/usr/bin/killall"), "backboardd", NULL});
+    // sbreload is the supported userspace restart path on modern rootless jailbreaks.
+    char *const sbreloadArgs[] = {(char *)ROOT_PATH("/usr/bin/sbreload"), NULL};
+    if (run_command(ROOT_PATH("/usr/bin/sbreload"), sbreloadArgs)) {
         return;
     }
-    system("killall lsd SpringBoard");
-    system("killall backboardd");
+
+    const char *killallPath = ROOT_PATH("/usr/bin/killall");
+    char *const springBoardArgs[] = {(char *)killallPath, "-9", "SpringBoard", NULL};
+    char *const backboardArgs[] = {(char *)killallPath, "-9", "backboardd", NULL};
+    char *const lsdArgs[] = {(char *)killallPath, "-9", "lsd", NULL};
+
+    // Run each service separately. A missing service must not prevent the others.
+    if (run_command(killallPath, springBoardArgs) && run_command(killallPath, backboardArgs)) {
+        run_command(killallPath, lsdArgs);
+        return;
+    }
+
+    // Legacy fallback for non-rootless jailbreaks without ROOT_PATH tooling.
+    system("/usr/bin/killall -9 SpringBoard");
+    system("/usr/bin/killall -9 backboardd");
+    system("/usr/bin/killall -9 lsd");
 }
 //=============================================================================
 @end

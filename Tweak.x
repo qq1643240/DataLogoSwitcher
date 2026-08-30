@@ -150,6 +150,9 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
                 return NewConnection5GUWB;
             case 4:
                 return NewConnection5GUC;
+            case 5:
+                // 5Gᴀ is a display variant, so use the stable 5G type.
+                return NewConnection5G;
             default:
                 break;
         }
@@ -185,7 +188,16 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 
     if ((connectionType == NewConnection5G || 
         connectionType == NewConnection5GPlus || 
-        connectionType == NewConnection5GUWB) &&
+        connectionType == NewConnection5GUWB ||
+        (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC)) &&
+        [defaults[@"5G"] intValue] == 5) {
+        return @"5Gᴀ";
+    }
+
+    if ((connectionType == NewConnection5G || 
+        connectionType == NewConnection5GPlus || 
+        connectionType == NewConnection5GUWB ||
+        (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC)) &&
         [defaults[@"5G"] intValue] == 99) {
         return defaults[@"custom5GString"] ? defaults[@"custom5GString"] : @"5G";
     }

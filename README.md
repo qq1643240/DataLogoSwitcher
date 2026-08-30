@@ -3,9 +3,9 @@
 
 ## Features
 
-With Data Logo Switcher, you can change your 3G or 4G signal logo to different logos.
+With Data Logo Switcher, you can change your 3G, 4G or 5G signal logo to different logos.
 
-Logos: 3G, 4G, LTE, LTE-A, LTE+ and 5GE.
+Logos: 3G, 4G, LTE, LTE-A, LTE+, 5GE, 5G, 5G Plus, 5G UWB, 5G UC and 5Gᴀ.
 
 ## Install
 

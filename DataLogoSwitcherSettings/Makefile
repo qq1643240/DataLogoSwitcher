@@ -5,12 +5,12 @@ DataLogoSwitcher_FRAMEWORKS = UIKit
 DataLogoSwitcher_CFLAGS = -fobjc-arc
 DataLogoSwitcher_PRIVATE_FRAMEWORKS = Preferences
 
-SDKVERSION = 9.2
-SYSROOT = $(THEOS)/sdks/iPhoneOS9.2.sdk
+SDKVERSION = 16.5
+SYSROOT = $(THEOS)/sdks/iPhoneOS16.5.sdk
 
-ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+ifneq ($(filter rootless roothide,$(THEOS_PACKAGE_SCHEME)),)
 	ARCHS = arm64 arm64e
-	TARGET = iphone:16.2:12.0
+	TARGET = iphone:16.5:12.0
 else
 	ARCHS = arm64 arm64e
 	TARGET = iphone:12.1.2:11.0

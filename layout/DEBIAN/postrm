@@ -1,11 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 
-declare -a cydia
-cydia=($CYDIA)
-
-if [[ $1 == remove ]]; then
-    if [[ ${CYDIA+@} ]]; then
-        eval "echo 'finish:restart' >&${cydia[0]}"
+if [ "$1" = remove ]; then
+    if [ -n "${CYDIA:-}" ]; then
+        cydia_fd=${CYDIA%% *}
+        eval "echo 'finish:restart' >&$cydia_fd"
     else
         echo "Please respring your device."
     fi

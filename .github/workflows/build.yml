@@ -1,0 +1,65 @@
+name: Build packages
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SDK_VERSION: 16.5
+
+jobs:
+  build:
+    name: Build ${{ matrix.scheme }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: rootless
+            theos_repo: theos/theos
+          - scheme: roothide
+            theos_repo: roothide/theos
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install ldid xz
+
+      - name: Install Theos
+        env:
+          THEOS_REPO: ${{ matrix.theos_repo }}
+        run: |
+          git clone --depth 1 "https://github.com/${THEOS_REPO}.git" "$RUNNER_TEMP/theos"
+          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
+
+      - name: Install iPhoneOS SDK
+        run: |
+          set -euo pipefail
+          sdk_dir="$THEOS/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          mkdir -p "$THEOS/sdks"
+          curl --fail --location --retry 5 \
+            "https://github.com/theos/sdks/releases/download/${SDK_VERSION}/iPhoneOS${SDK_VERSION}.sdk.tar.xz" \
+            -o "$RUNNER_TEMP/iPhoneOS.sdk.tar.xz"
+          tar -xJf "$RUNNER_TEMP/iPhoneOS.sdk.tar.xz" -C "$THEOS/sdks"
+          test -d "$sdk_dir"
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=${{ matrix.scheme }}
+          mkdir -p artifacts
+          find packages -type f -name '*.deb' -exec cp {} "artifacts/DataLogoSwitcher-${{ matrix.scheme }}.deb" \;
+          test -s "artifacts/DataLogoSwitcher-${{ matrix.scheme }}.deb"
+
+      - name: Upload ${{ matrix.scheme }} package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DataLogoSwitcher-${{ matrix.scheme }}
+          path: artifacts/DataLogoSwitcher-${{ matrix.scheme }}.deb
+          if-no-files-found: error

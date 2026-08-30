@@ -6,12 +6,12 @@ DataLogoSwitcher_PRIVATE_FRAMEWORKS = Foundation
 GO_EASY_FOR_ME = 1
 FINALPACKAGE = 1
 
-SDKVERSION = 9.2
-SYSROOT = $(THEOS)/sdks/iPhoneOS9.2.sdk
+SDKVERSION = 16.5
+SYSROOT = $(THEOS)/sdks/iPhoneOS16.5.sdk
 
-ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+ifneq ($(filter rootless roothide,$(THEOS_PACKAGE_SCHEME)),)
 	ARCHS = arm64 arm64e
-	TARGET = iphone:16.2:12.0
+	TARGET = iphone:16.5:12.0
 else
 	ARCHS = armv7 arm64 arm64e
 	TARGET = iphone:12.1.2:7.0
