@@ -503,19 +503,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     else 
     {
         %init(GiOS13);
-        // SystemStatusUI may load after the tweak constructor on iOS 17.
-        static BOOL modernHookInstalled = NO;
-        if (objc_getClass("STUIStatusBarStringView") != Nil) {
-            modernHookInstalled = YES;
-            %init(GiOS17);
-        } else {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-                           dispatch_get_main_queue(), ^{
-                if (!modernHookInstalled && objc_getClass("STUIStatusBarStringView") != Nil) {
-                    modernHookInstalled = YES;
-                    %init(GiOS17);
-                }
-            });
-        }
+        // Safe when absent on older systems; Logos skips an unavailable class.
+        %init(GiOS17);
     }
 }
