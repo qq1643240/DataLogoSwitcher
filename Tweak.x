@@ -94,7 +94,7 @@ static BOOL DLSIsStatusBarObject(id object)
     if (!DLSApplyingText) {
         currentAttributed = ((id (*)(id, SEL))objc_msgSend)(self, @selector(attributedText));
     }
-    if (replacement.length > 0 && [currentAttributed isKindOfClass:NSAttributedString.class] && currentAttributed.length > 0 && !DLSApplyingText) {
+    if (replacement.length > 0 && [currentAttributed isKindOfClass:NSAttributedString.class] && [(NSAttributedString *)currentAttributed length] > 0 && !DLSApplyingText) {
         DLSApplyingText = YES;
         ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSAttributedReplacement(currentAttributed, replacement));
         DLSApplyingText = NO;
