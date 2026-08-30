@@ -39,7 +39,7 @@ static BOOL run_command(const char *path, char *const argv[])
 	if(_specifiers == nil) {
 
         NSMutableArray *specifiers = [NSMutableArray array];
-        
+
         [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
 		PSSpecifier *logo3G = [PSSpecifier preferenceSpecifierNamed:@"3G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
 		[logo3G setIdentifier:@"3G"];
@@ -103,7 +103,7 @@ static BOOL run_command(const char *path, char *const argv[])
 		[logo4G setIdentifier:@"4G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -115,11 +115,12 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"5G+",
                 @"5G UWB",
                 @"5G UC",
+                @"4Gᴀ",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -130,11 +131,12 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"5G",
                 @"5G+",
                 @"5G UWB",
+                @"4Gᴀ",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@5,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -142,6 +144,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"LTE+",
                 @"5GE",
+                @"4Gᴀ",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
@@ -212,10 +215,10 @@ static BOOL run_command(const char *path, char *const argv[])
         }
 
         PSSpecifier* footSpecifier = [PSSpecifier emptyGroupSpecifier];
-        [footSpecifier setProperty:@"© 2011-2023 Hiraku (@hiraku_dev)" forKey:@"footerText"];
+        [footSpecifier setProperty:@"© 2011-2023 Hiraku (@hiraku_dev)\n© 2026 @6866dev 更新优化" forKey:@"footerText"];
         [specifiers addObject:footSpecifier];
 
-        PSSpecifier *respringButton = [PSSpecifier preferenceSpecifierNamed:@"保存并注销" target:self set:nil get:nil detail:nil cell:[PSTableCell cellTypeFromString:@"PSButtonCell"] edit:nil];
+        PSSpecifier *respringButton = [PSSpecifier preferenceSpecifierNamed:@"注销设备生效" target:self set:nil get:nil detail:nil cell:[PSTableCell cellTypeFromString:@"PSButtonCell"] edit:nil];
         respringButton->action = @selector(respring);
         [specifiers addObject:respringButton];
 
@@ -226,13 +229,13 @@ static BOOL run_command(const char *path, char *const argv[])
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    self.title = @"5G-A";
+    self.title = @"5G Advanced";
 }
 
 - (void)loadView {
   	[super loadView];
-    self.title = @"5G-A";
-  	
+    self.title = @"5G Advanced";
+
     NSMutableDictionary *settings = [[NSMutableDictionary alloc] initWithContentsOfFile:SettingsPath];
     if (settings == nil) {
         settings = [[NSMutableDictionary alloc] initWithObjectsAndKeys: @0, @"3G",

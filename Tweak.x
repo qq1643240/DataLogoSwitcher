@@ -21,6 +21,11 @@ static NSString *DLSRewriteStatusText(NSString *text)
     if (![text isKindOfClass:NSString.class] || text.length == 0) return nil;
     NSDictionary *settings = DLSSettings();
 
+    NSSet *fourGCompact = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", nil];
+    if ([fourGCompact containsObject:text] && [settings[@"4G"] integerValue] == 10) {
+        return @"4Gᴀ";
+    }
+
     NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
@@ -68,8 +73,8 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
 
     // 4G+ must remain vertically centered. Do not apply the compact 5G suffix style.
-    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"];
-    if (!compact5GSuffix) {
+    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4Gᴀ"];
+    if (!compactSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
@@ -77,11 +82,16 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // 5G A/custom text is deliberately mapped to NewConnection5GPlus.
-    // Its third glyph (+) is the authoritative native compact suffix style.
+    // Find the last native attribute run that differs from the body.
+    // This handles both 5G+ (suffix at index 2) and LTE+/4G+ (suffix
+    // at a later index) without assuming a fixed source-string length.
     NSDictionary *suffixAttributes = nil;
-    if (compact5GSuffix && source.length > 2) {
-        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
+    for (NSUInteger index = source.length; index > 0; index--) {
+        NSDictionary *candidate = [source attributesAtIndex:index - 1 effectiveRange:NULL];
+        if (![candidate isEqualToDictionary:prefixAttributes]) {
+            suffixAttributes = candidate;
+            break;
+        }
     }
     if (suffixAttributes == nil) {
         suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
@@ -110,7 +120,8 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
     NSMutableDictionary *suffix = [prefix mutableCopy];
-    if (replacement.length > 2 && [replacement hasPrefix:@"5G"] && font != nil) {
+    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4Gᴀ"];
+    if (replacement.length > 2 && compactSuffix && font != nil) {
         UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
                                                     size:MAX(1.0, font.pointSize * 0.58)];
         suffix[NSFontAttributeName] = suffixFont;
@@ -272,7 +283,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     int connectionType = %orig;
 
     NSDictionary *defaults = DLSSettings();
-    if (connectionType == NewConnectionUmts || 
+    if (connectionType == NewConnectionUmts ||
         connectionType == NewConnectionHsdpa)
     {
         switch([defaults[@"3G"] intValue])
@@ -302,10 +313,10 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         }
     }
 
-    if (connectionType == NewConnection4GOverride || 
-        connectionType == NewConnectionLte || 
-        connectionType == NewConnectionLteA || 
-        connectionType == NewConnectionLtePlus || 
+    if (connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE)
     {
         switch([defaults[@"4G"] intValue])
@@ -330,14 +341,20 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
                 return NewConnection5GUWB;
             case 9:
                 return NewConnection5GUC;
+            case 10:
+                // Use native LTE+ as the host for the compact 4G suffix.
+                return NewConnectionLtePlus;
+            case 99:
+                // Use native LTE+ as the host for custom 4G text.
+                return NewConnectionLtePlus;
             default:
                 break;
         }
     }
 
-    if (connectionType == NewConnection5G || 
-        connectionType == NewConnection5GPlus || 
-        connectionType == NewConnection5GUWB || 
+    if (connectionType == NewConnection5G ||
+        connectionType == NewConnection5GPlus ||
+        connectionType == NewConnection5GUWB ||
         (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC))
     {
         switch([defaults[@"5G"] intValue])
@@ -374,31 +391,40 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 %hook _UIStatusBarCellularItem
 - (NSString *)_stringForCellularType:(int)connectionType {
     NSDictionary *defaults = DLSSettings();
-    
+
     if ((connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa) &&
         [defaults[@"3G"] intValue] == 99) {
         return defaults[@"custom3GString"] ? defaults[@"custom3GString"] : @"3G";
     }
 
-    if ((connectionType == NewConnection4GOverride || 
-        connectionType == NewConnectionLte || 
-        connectionType == NewConnectionLteA || 
-        connectionType == NewConnectionLtePlus || 
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
+        connectionType == NewConnection5GE) &&
+        [defaults[@"4G"] intValue] == 10) {
+        return @"4Gᴀ";
+    }
+
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 99) {
         return defaults[@"custom4GString"] ? defaults[@"custom4GString"] : @"4G";
     }
 
-    if ((connectionType == NewConnection5G || 
-        connectionType == NewConnection5GPlus || 
+    if ((connectionType == NewConnection5G ||
+        connectionType == NewConnection5GPlus ||
         connectionType == NewConnection5GUWB ||
         (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC)) &&
         [defaults[@"5G"] intValue] == 5) {
         return @"5Gᴀ";
     }
 
-    if ((connectionType == NewConnection5G || 
-        connectionType == NewConnection5GPlus || 
+    if ((connectionType == NewConnection5G ||
+        connectionType == NewConnection5GPlus ||
         connectionType == NewConnection5GUWB ||
         (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC)) &&
         [defaults[@"5G"] intValue] == 99) {
@@ -438,10 +464,10 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         }
     }
 
-    if (connectionType == NewConnection4GOverride || 
-        connectionType == NewConnectionLte || 
-        connectionType == NewConnectionLteA || 
-        connectionType == NewConnectionLtePlus || 
+    if (connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE)
     {
         switch([defaults[@"4G"] intValue])
@@ -458,6 +484,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
                 return NewConnectionLtePlus;
             case 5:
                 return NewConnection5GE;
+            case 10:
+                return NewConnectionLtePlus;
             default:
                 break;
         }
@@ -470,16 +498,25 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 %hook _UIStatusBarCellularItem
 - (NSString *)_stringForCellularType:(int)connectionType {
     NSDictionary *defaults = DLSSettings();
-    
+
     if ((connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa) &&
         [defaults[@"3G"] intValue] == 99) {
         return defaults[@"custom3GString"] ? defaults[@"custom3GString"] : @"3G";
     }
 
-    if ((connectionType == NewConnection4GOverride || 
-        connectionType == NewConnectionLte || 
-        connectionType == NewConnectionLteA || 
-        connectionType == NewConnectionLtePlus || 
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
+        connectionType == NewConnection5GE) &&
+        [defaults[@"4G"] intValue] == 10) {
+        return @"4Gᴀ";
+    }
+
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 99) {
         return defaults[@"custom4GString"] ? defaults[@"custom4GString"] : @"4G";
@@ -544,11 +581,11 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 
 %group GiOS11
 %hook SBTelephonyManager
-- (int)dataConnectionType 
+- (int)dataConnectionType
 {
     int connectionType = %orig;
     NSDictionary *defaults = DLSSettings();
-    
+
     if (connectionType == ConnectionUmts || connectionType == ConnectionHsdpa)
     {
         switch([defaults[@"3G"] intValue])
@@ -584,11 +621,11 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 %end
 %end
 
-%ctor 
+%ctor
 {
     %init;
 
-    if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0) 
+    if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0)
     {
          %init(GiOS11);
     }
@@ -596,7 +633,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     {
         %init(GiOS12);
 
-        if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_2) 
+        if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_2)
         {
             %init(GiOS12_1);
         }
@@ -605,7 +642,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             %init(GiOS12_2);
         }
     }
-    else 
+    else
     {
         %init(GiOS13);
         // Safe when absent on older systems; Logos skips an unavailable class.

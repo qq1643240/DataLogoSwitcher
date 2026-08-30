@@ -1,10 +1,10 @@
 Author: Hiraku <dev@hiraku.tw>
 Maintainer: BigBoss <bigboss@thebigboss.org>
-Name: 5G-A
+Name: 5G Advanced
 Package: tw.hiraku.datalogoswitcher
 Section: Tweaks
 Depends: firmware (>= 7.0), preferenceloader
-Version: 4.0.19
+Version: 4.0.21
 Architecture: iphoneos-arm
 Description: Change your 3G/4G/LTE/5G logo
 Depiction: http://moreinfo.thebigboss.org/moreinfo/depiction.php?file=datalogoswitcherDp
