@@ -5,6 +5,6 @@
 		detail = DLSSettingController;
 		icon = "Icon.png";
 		isController = 1;
-		@"网络标识修改"
+		label = "5G+";
 	};
 }

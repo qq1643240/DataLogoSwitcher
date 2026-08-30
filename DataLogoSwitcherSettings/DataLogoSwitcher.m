@@ -28,6 +28,8 @@ static BOOL run_command(const char *path, char *const argv[])
 //============================================================================================================
 
 @interface DLSSettingController: PSListController
+@property(nonatomic, strong) UIActivityIndicatorView *dlsSpinner;
+@property(nonatomic, assign) BOOL dlsRespringing;
 - (void)respring;
 @end
 
@@ -49,10 +51,10 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"4G 增强",
+                @"4G+",
                 @"5GE",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"5G UC",
                 @"自定义"
@@ -65,10 +67,10 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"4G 增强",
+                @"4G+",
                 @"5GE",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"自定义"
             ] forKeys:logo3G.values];
@@ -80,7 +82,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"4G 增强",
+                @"4G+",
                 @"5GE",
                 @"自定义"
             ] forKeys:logo3G.values];
@@ -97,7 +99,7 @@ static BOOL run_command(const char *path, char *const argv[])
 		[specifiers addObject:logo3G];
 
         [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
-        PSSpecifier *logo4G = [PSSpecifier preferenceSpecifierNamed:@"4G/LTE 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
+        PSSpecifier *logo4G = [PSSpecifier preferenceSpecifierNamed:@"4G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
 		[logo4G setIdentifier:@"4G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
@@ -107,10 +109,10 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"4G 增强",
+                @"4G+",
                 @"5GE",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"5G UC",
                 @"自定义"
@@ -123,10 +125,10 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"4G 增强",
+                @"4G+",
                 @"5GE",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"自定义"
             ] forKeys:logo4G.values];
@@ -163,10 +165,10 @@ static BOOL run_command(const char *path, char *const argv[])
             logo5G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"5G UC",
-                @"5Gᴀ",
+                @"5G A",
                 @"自定义"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
@@ -181,7 +183,7 @@ static BOOL run_command(const char *path, char *const argv[])
             logo5G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"5G",
-                @"5G 增强",
+                @"5G+",
                 @"5G UWB",
                 @"自定义"
             ] forKeys:logo5G.values];
@@ -198,13 +200,13 @@ static BOOL run_command(const char *path, char *const argv[])
             [custom3GStringCell setIdentifier:@"custom3GString"];
             [specifiers addObject:custom3GStringCell];
 
-            PSSpecifier *custom4GStringCell = [PSSpecifier preferenceSpecifierNamed:@"4G/LTE" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
+            PSSpecifier *custom4GStringCell = [PSSpecifier preferenceSpecifierNamed:@"4G" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
             [custom4GStringCell setIdentifier:@"custom4GString"];
             [specifiers addObject:custom4GStringCell];
         }
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G 自定义文字" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
+            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G 自定义" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
             [custom5GStringCell setIdentifier:@"custom5GString"];
             [specifiers addObject:custom5GStringCell];
         }
@@ -245,14 +247,26 @@ static BOOL run_command(const char *path, char *const argv[])
 }
 
 -(void)respring {
-    // Commit the active custom-text field before reading preferences.
+    if (self.dlsRespringing) return;
+    self.dlsRespringing = YES;
     [self.view endEditing:YES];
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        // Give Preferences a short moment to finish the editing callback.
-        usleep(250000);
+    if (self.dlsSpinner == nil) {
+        self.dlsSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        self.dlsSpinner.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.view addSubview:self.dlsSpinner];
+        [NSLayoutConstraint activateConstraints:@[
+            [self.dlsSpinner.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+            [self.dlsSpinner.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor]
+        ]];
+    }
+    [self.dlsSpinner startAnimating];
+    self.navigationItem.hidesBackButton = YES;
 
-        // sbreload is the supported userspace restart path on modern jailbreaks.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Keep the spinner visible long enough to acknowledge the tap.
+        usleep(550000);
+
         char *const sbreloadArgs[] = {(char *)ROOT_PATH("/usr/bin/sbreload"), NULL};
         if (run_command(ROOT_PATH("/usr/bin/sbreload"), sbreloadArgs)) {
             return;

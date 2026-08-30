@@ -39,6 +39,34 @@ static NSString *DLSRewriteStatusText(NSString *text)
     return nil;
 }
 
+static BOOL DLSApplyTextPreservingStyle(id object, NSString *replacement)
+{
+    if (replacement.length == 0) return NO;
+
+    if ([object respondsToSelector:@selector(attributedText)] &&
+        [object respondsToSelector:@selector(setAttributedText:)]) {
+        NSAttributedString *current = [object attributedText];
+        if (current.length > 0) {
+            NSMutableAttributedString *updated = [current mutableCopy];
+            [updated.mutableString setString:replacement];
+            [object setAttributedText:updated];
+            return YES;
+        }
+    }
+
+    if ([object respondsToSelector:@selector(setAttributedText:)] &&
+        [object respondsToSelector:@selector(font)]) {
+        UIFont *font = [object font];
+        UIColor *color = [object respondsToSelector:@selector(textColor)] ? [object textColor] : nil;
+        NSMutableDictionary *attributes = [NSMutableDictionary dictionary];
+        if (font != nil) attributes[NSFontAttributeName] = font;
+        if (color != nil) attributes[NSForegroundColorAttributeName] = color;
+        [object setAttributedText:[[NSAttributedString alloc] initWithString:replacement attributes:attributes]];
+        return YES;
+    }
+    return NO;
+}
+
 static BOOL DLSIsStatusBarObject(id object)
 {
     id current = object;
@@ -59,7 +87,10 @@ static BOOL DLSIsStatusBarObject(id object)
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
     NSString *replacement = DLSRewriteStatusText(text);
-    %orig(replacement ?: text);
+    if (replacement.length > 0 && DLSApplyTextPreservingStyle(self, replacement)) {
+        return;
+    }
+    %orig(text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
     NSString *replacement = DLSRewriteStatusText(text.string);
@@ -78,8 +109,7 @@ static BOOL DLSIsStatusBarObject(id object)
 - (void)setText:(NSString *)text {
     if (DLSIsStatusBarObject(self)) {
         NSString *replacement = DLSRewriteStatusText(text);
-        if (replacement.length > 0) {
-            %orig(replacement);
+        if (replacement.length > 0 && DLSApplyTextPreservingStyle(self, replacement)) {
             return;
         }
     }
