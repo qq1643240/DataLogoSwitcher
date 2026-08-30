@@ -36,8 +36,11 @@ jobs:
         run: |
           set -euo pipefail
           theos_dir="$RUNNER_TEMP/theos"
+          sdks_dir="$RUNNER_TEMP/patched-sdks"
           git clone --depth 1 "https://github.com/${THEOS_REPO}.git" "$theos_dir"
-          git clone --depth 1 "https://github.com/theos/sdks.git" "$theos_dir/sdks"
+          git clone --depth 1 "https://github.com/theos/sdks.git" "$sdks_dir"
+          mkdir -p "$theos_dir/sdks"
+          cp -R "$sdks_dir/iPhoneOS16.5.sdk" "$theos_dir/sdks/"
           echo "THEOS=$theos_dir" >> "$GITHUB_ENV"
           test -d "$theos_dir/sdks/iPhoneOS16.5.sdk"
 
