@@ -51,8 +51,7 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
     UIFont *font = attributes[NSFontAttributeName];
     if (font != nil) {
-        // The native 5G+ suffix is materially smaller than the 5G body.
-        // Use the same family/weight, with compact metrics for A/custom suffixes.
+        // Match the native compact suffix used by the working 5Gᴀ path.
         attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
                                                                   size:MAX(1.0, font.pointSize * 0.58)];
     }
@@ -69,10 +68,8 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
 
     NSRange prefixRange = NSMakeRange(0, 0);
     NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
-
-    // 4G+ must remain vertically centered. Do not apply the compact 5G suffix style.
-    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"];
-    if (!compact5GSuffix) {
+    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"];
+    if (!compactSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
@@ -80,18 +77,16 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // Use the host's final glyph as the compact suffix. This works for
-    // both native 5G+ and LTE+ hosts (the latter is "LTE+").
-    NSDictionary *suffixAttributes = nil;
-    if (compact5GSuffix && source.length > 0) {
-        suffixAttributes = [source attributesAtIndex:source.length - 1 effectiveRange:NULL];
-    }
+    // The working 5Gᴀ path inherits the native 5G+ suffix attributes at index 2.
+    // 4G+ and 4Gᴀ inherit the native LTE+ suffix attributes at the final index.
+    NSUInteger sourceSuffixIndex = ([source.string hasPrefix:@"5G"] && source.length > 2)
+        ? 2 : source.length - 1;
+    NSDictionary *suffixAttributes = [source attributesAtIndex:sourceSuffixIndex effectiveRange:NULL];
     if (suffixAttributes == nil) {
         suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
     }
     if (replacement.length > prefixLength) {
-        [updated setAttributes:suffixAttributes
-                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        [updated setAttributes:suffixAttributes range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
     }
     return updated;
 }
