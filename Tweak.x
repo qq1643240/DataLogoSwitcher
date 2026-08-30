@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <CoreText/CoreText.h>
 #import <version.h>
 #import <rootless.h>
 #import <objc/runtime.h>
@@ -29,7 +30,7 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
+    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", @"5G+", nil];
     if ([fourG containsObject:text]) {
         NSInteger value = [settings[@"4G"] integerValue];
         if (value == 4) return @"4G+";
@@ -42,6 +43,39 @@ static NSString *DLSRewriteStatusText(NSString *text)
         return settings[@"custom3GString"];
     }
     return nil;
+}
+
+static BOOL DLSUsesSystemStatusUI(void)
+{
+    return NSClassFromString(@"STUIStatusBarStringView") != nil;
+}
+
+static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
+{
+    if (nativeSuffixFont == nil) return nil;
+
+    // The native compact '+' font is a status-bar subset font. It often has
+    // no U+1D00, so changing its descriptor weight still triggers a heavy
+    // fallback. Select a true Regular system font that contains ᴀ, keeping
+    // the native compact run's exact point size and other attributes intact.
+    CGFloat size = nativeSuffixFont.pointSize;
+    NSArray<UIFont *> *candidates = @[
+        [UIFont fontWithName:@".SFUI-Regular" size:size],
+        [UIFont fontWithName:@"SFProText-Regular" size:size],
+        [UIFont fontWithName:@"HelveticaNeue" size:size],
+        [UIFont fontWithName:@"HelveticaNeue-Regular" size:size],
+        [UIFont systemFontOfSize:size weight:UIFontWeightRegular]
+    ];
+    unichar character = 0x1D00; // LATIN LETTER SMALL CAPITAL A (ᴀ)
+    for (UIFont *candidate in candidates) {
+        if (candidate == nil) continue;
+        CGGlyph glyph = 0;
+        CTFontRef font = (__bridge CTFontRef)candidate;
+        if (CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) && glyph != 0) {
+            return candidate;
+        }
+    }
+    return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
 }
 
 static __thread BOOL DLSApplyingText;
@@ -77,13 +111,16 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // The working 5Gᴀ path inherits the native 5G+ suffix attributes at index 2.
-    // 4G+ and 4Gᴀ inherit the native LTE+ suffix attributes at the final index.
-    NSUInteger sourceSuffixIndex = ([source.string hasPrefix:@"5G"] && source.length > 2)
-        ? 2 : source.length - 1;
-    NSDictionary *suffixAttributes = [source attributesAtIndex:sourceSuffixIndex effectiveRange:NULL];
-    if (suffixAttributes == nil) {
-        suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+    // SystemStatusUI gives native 5G+/5G UC a separate compact suffix run.
+    // Keep its size, color, kerning and baseline; only ᴀ receives a glyph
+    // font with verified U+1D00 coverage so CoreText cannot fall back bold.
+    NSDictionary *nativeSuffix = [source attributesAtIndex:source.length - 1 effectiveRange:NULL];
+    NSMutableDictionary *suffixAttributes = [nativeSuffix mutableCopy];
+    if (suffixAttributes == nil) suffixAttributes = [DLSCompactSuffixAttributes(prefixAttributes) mutableCopy];
+    if ([replacement hasSuffix:@"ᴀ"]) {
+        UIFont *nativeFont = suffixAttributes[NSFontAttributeName];
+        UIFont *regularFont = DLSRegularGlyphFont(nativeFont);
+        if (regularFont != nil) suffixAttributes[NSFontAttributeName] = regularFont;
     }
     if (replacement.length > prefixLength) {
         [updated setAttributes:suffixAttributes range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
@@ -136,24 +173,9 @@ static BOOL DLSIsStatusBarObject(id object)
 %group GiOS17
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
-    NSString *replacement = DLSRewriteStatusText(text);
-    id currentAttributed = nil;
-    if (!DLSApplyingText) {
-        currentAttributed = ((id (*)(id, SEL))objc_msgSend)(self, @selector(attributedText));
-    }
-    if (replacement.length > 0 && [currentAttributed isKindOfClass:NSAttributedString.class] && [(NSAttributedString *)currentAttributed length] > 0 && !DLSApplyingText) {
-        DLSApplyingText = YES;
-        ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSAttributedReplacement(currentAttributed, replacement));
-        DLSApplyingText = NO;
-        return;
-    }
-    if (replacement.length > 0 && !DLSApplyingText && ((BOOL (*)(id, SEL, SEL))objc_msgSend)(self, @selector(respondsToSelector:), @selector(setAttributedText:))) {
-        DLSApplyingText = YES;
-        ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
-        DLSApplyingText = NO;
-        return;
-    }
-    %orig(replacement.length > 0 ? replacement : text);
+    // Let SystemStatusUI create the native 5G+/LTE+ attributed suffix run.
+    // The setAttributedText: hook below changes only the displayed suffix.
+    %orig(text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
     if (DLSApplyingText) {
@@ -168,21 +190,8 @@ static BOOL DLSIsStatusBarObject(id object)
 // Some iOS 17 builds use a UILabel subclass for the final rendered text.
 %hook UILabel
 - (void)setText:(NSString *)text {
-    if (DLSIsStatusBarObject(self)) {
-        NSString *replacement = DLSRewriteStatusText(text);
-        if (replacement.length > 0 && !DLSApplyingText && self.attributedText.length > 0) {
-            DLSApplyingText = YES;
-            [self setAttributedText:DLSAttributedReplacement(self.attributedText, replacement)];
-            DLSApplyingText = NO;
-            return;
-        }
-        if (replacement.length > 0 && !DLSApplyingText && [self respondsToSelector:@selector(setAttributedText:)]) {
-            DLSApplyingText = YES;
-            [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
-            DLSApplyingText = NO;
-            return;
-        }
-    }
+    // Do not replace ordinary text before the system has generated its
+    // native compact suffix attributed run.
     %orig(text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
@@ -319,7 +328,10 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 3:
                 return NewConnectionLteA;
             case 4:
-                return NewConnectionLtePlus;
+                // Reuse the native 5G+ compact attributed suffix renderer.
+                return NewConnection5GPlus;
+            case 10:
+                return NewConnection5GPlus;
             case 5:
                 return NewConnection5GE;
             case 6:
@@ -395,7 +407,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 4) {
-        return @"4G+";
+        if (!DLSUsesSystemStatusUI()) return @"4G+";
     }
 
     if ((connectionType == NewConnection4GOverride ||
@@ -404,7 +416,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 10) {
-        return @"4Gᴀ";
+        if (!DLSUsesSystemStatusUI()) return @"4Gᴀ";
     }
 
     if ((connectionType == NewConnection5G ||
@@ -412,7 +424,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnection5GUWB ||
         (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0 && connectionType == NewConnection5GUC)) &&
         [defaults[@"5G"] intValue] == 5) {
-        return @"5Gᴀ";
+        if (!DLSUsesSystemStatusUI()) return @"5Gᴀ";
     }
 
     if ((connectionType == NewConnection5G ||
@@ -645,9 +657,9 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     }
     else
     {
-        if (NSClassFromString(@"STUIStatusBarStringView") != nil)
-            %init(GiOS17);
-        else
-            %init(GiOS13);
+        // iOS 17 needs both hooks: GiOS13 selects the true cellular host
+        // (5G+/LTE+), while GiOS17 replaces only its attributed suffix.
+        %init(GiOS13);
+        %init(GiOS17);
     }
 }
