@@ -303,6 +303,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     return %orig;
 }
 %end
+%end
 
 %group GiOS12_2
 %hook SBTelephonySubscriptionContext
