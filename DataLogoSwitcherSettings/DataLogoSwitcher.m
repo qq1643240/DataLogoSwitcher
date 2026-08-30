@@ -168,7 +168,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"5G+",
                 @"5G UWB",
                 @"5G UC",
-                @"5G A",
+                @"5Gᴀ",
                 @"自定义"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];

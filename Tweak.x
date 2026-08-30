@@ -25,7 +25,7 @@ static NSString *DLSRewriteStatusText(NSString *text)
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
         NSString *custom = settings[@"custom5GString"];
-        if (value == 5) return @"5GA";
+        if (value == 5) return @"5Gᴀ";
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
