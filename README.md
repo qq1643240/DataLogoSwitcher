@@ -1,11 +1,12 @@
-# Data Logo Switcher
+# 5G-A
 
+## 功能
 
-## Features
+修改 iOS 状态栏中的 3G、4G/LTE 和 5G 网络标识。
 
-With Data Logo Switcher, you can change your 3G, 4G or 5G signal logo to different logos.
+可选标识：3G、4G、LTE、LTE-A、4G+、5GE、5G、5G+、5G UWB、5G UC 和 5G A。
 
-Logos: 3G, 4G, LTE, LTE-A, LTE+, 5GE, 5G, 5G Plus, 5G UWB, 5G UC and 5Gᴀ.
+5G A 仅用于设置菜单显示；状态栏使用与系统 5G+ 相同的富文本字体样式显示后缀。
 
 ## Install
 

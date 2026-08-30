@@ -49,25 +49,50 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSMutableAttributedString *updated = [[NSMutableAttributedString alloc] initWithString:replacement];
     if (source.length == 0) return updated;
 
-    NSRange firstRange = NSMakeRange(0, 0);
-    NSDictionary *baseAttributes = [source attributesAtIndex:0 effectiveRange:&firstRange];
-    [updated setAttributes:baseAttributes ?: @{} range:NSMakeRange(0, replacement.length)];
+    NSRange prefixRange = NSMakeRange(0, 0);
+    NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange];
+    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
+    [updated setAttributes:prefixAttributes ?: @{}
+                     range:NSMakeRange(0, prefixLength)];
 
-    // Render the 5G-A suffix with the same system font family instead of the
-    // Unicode small-cap glyph, which can fall back to a heavier font on iOS 17.
-    if ([replacement isEqualToString:@"5GA"]) {
-        NSMutableDictionary *suffixAttributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
-        UIFont *baseFont = suffixAttributes[NSFontAttributeName];
-        if (baseFont != nil) {
-            UIFont *suffixFont = [UIFont fontWithDescriptor:baseFont.fontDescriptor
-                                                        size:MAX(1.0, baseFont.pointSize * 0.70)];
-            suffixAttributes[NSFontAttributeName] = suffixFont;
-            CGFloat currentOffset = [suffixAttributes[NSBaselineOffsetAttributeName] doubleValue];
-            suffixAttributes[NSBaselineOffsetAttributeName] = @(currentOffset + baseFont.pointSize * 0.18);
-        }
-        [updated setAttributes:suffixAttributes range:NSMakeRange(replacement.length - 1, 1)];
+    // Native 5G+ / 5G UC / 5G UWB use a separate, thinner suffix run.
+    // Reuse the source suffix attributes for every replacement suffix.
+    if (replacement.length > 2) {
+        NSUInteger sourceSuffixIndex = source.length > 2 ? 2 : source.length - 1;
+        NSRange suffixRange = NSMakeRange(0, 0);
+        NSDictionary *suffixAttributes = [source attributesAtIndex:sourceSuffixIndex
+                                                        effectiveRange:&suffixRange];
+        [updated setAttributes:suffixAttributes ?: prefixAttributes
+                         range:NSMakeRange(2, replacement.length - 2)];
     }
     return updated;
+}
+
+static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
+{
+    UIFont *font = nil;
+    if ([object respondsToSelector:@selector(font)]) {
+        font = ((id (*)(id, SEL))objc_msgSend)(object, @selector(font));
+    }
+    UIColor *color = nil;
+    if ([object respondsToSelector:@selector(textColor)]) {
+        color = ((id (*)(id, SEL))objc_msgSend)(object, @selector(textColor));
+    }
+
+    NSMutableDictionary *prefix = [NSMutableDictionary dictionary];
+    if (font != nil) prefix[NSFontAttributeName] = font;
+    if (color != nil) prefix[NSForegroundColorAttributeName] = color;
+
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
+    if (replacement.length > 2 && font != nil) {
+        NSMutableDictionary *suffix = [prefix mutableCopy];
+        UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
+                                                    size:MAX(1.0, font.pointSize * 0.70)];
+        suffix[NSFontAttributeName] = suffixFont;
+        suffix[NSBaselineOffsetAttributeName] = @(font.pointSize * 0.18);
+        [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
+    }
+    return result;
 }
 
 static BOOL DLSIsStatusBarObject(id object)
@@ -100,6 +125,12 @@ static BOOL DLSIsStatusBarObject(id object)
         DLSApplyingText = NO;
         return;
     }
+    if (replacement.length > 0 && !DLSApplyingText && [self respondsToSelector:@selector(setAttributedText:)]) {
+        DLSApplyingText = YES;
+        ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
+        DLSApplyingText = NO;
+        return;
+    }
     %orig(replacement.length > 0 ? replacement : text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
@@ -117,14 +148,16 @@ static BOOL DLSIsStatusBarObject(id object)
 - (void)setText:(NSString *)text {
     if (DLSIsStatusBarObject(self)) {
         NSString *replacement = DLSRewriteStatusText(text);
-        if (replacement.length > 0 && self.attributedText.length > 0 && !DLSApplyingText) {
+        if (replacement.length > 0 && !DLSApplyingText && self.attributedText.length > 0) {
             DLSApplyingText = YES;
             [self setAttributedText:DLSAttributedReplacement(self.attributedText, replacement)];
             DLSApplyingText = NO;
             return;
         }
-        if (replacement.length > 0) {
-            %orig(replacement);
+        if (replacement.length > 0 && !DLSApplyingText && [self respondsToSelector:@selector(setAttributedText:)]) {
+            DLSApplyingText = YES;
+            [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
+            DLSApplyingText = NO;
             return;
         }
     }

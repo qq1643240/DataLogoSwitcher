@@ -5,6 +5,6 @@
 		detail = DLSSettingController;
 		icon = "Icon.png";
 		isController = 1;
-		label = "Data Logo Switcher";
+		label = "5G-A";
 	};
 }
