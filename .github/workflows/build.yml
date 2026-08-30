@@ -47,6 +47,7 @@ jobs:
       - name: Build package
         run: |
           set -euo pipefail
+          chmod 755 layout/DEBIAN/preinst layout/DEBIAN/postrm
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=${{ matrix.scheme }}
           mkdir -p artifacts
           find packages -type f -name '*.deb' -exec cp {} "artifacts/DataLogoSwitcher-${{ matrix.scheme }}.deb" \;
