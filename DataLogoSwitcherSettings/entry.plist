@@ -5,6 +5,6 @@
 		detail = DLSSettingController;
 		icon = "Icon.png";
 		isController = 1;
-		label = "5G+";
+		label = "5G-A";
 	};
 }

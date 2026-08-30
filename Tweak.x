@@ -4,6 +4,7 @@
 #import <version.h>
 #import <rootless.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <dispatch/dispatch.h>
 
 #define SettingsPath @"/var/mobile/Library/Preferences/tw.hiraku.datalogoswitcher.plist"
@@ -20,10 +21,10 @@ static NSString *DLSRewriteStatusText(NSString *text)
     if (![text isKindOfClass:NSString.class] || text.length == 0) return nil;
     NSDictionary *settings = DLSSettings();
 
-    NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", nil];
+    NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
-        if (value == 5) return @"5Gᴀ";
+        if (value == 5) return @"5GA";
         if (value == 99 && [settings[@"custom5GString"] length] > 0) return settings[@"custom5GString"];
     }
 
@@ -39,32 +40,34 @@ static NSString *DLSRewriteStatusText(NSString *text)
     return nil;
 }
 
-static BOOL DLSApplyTextPreservingStyle(id object, NSString *replacement)
+static __thread BOOL DLSApplyingText;
+
+static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
 {
-    if (replacement.length == 0) return NO;
+    if (replacement.length == 0) return source;
 
-    if ([object respondsToSelector:@selector(attributedText)] &&
-        [object respondsToSelector:@selector(setAttributedText:)]) {
-        NSAttributedString *current = [object attributedText];
-        if (current.length > 0) {
-            NSMutableAttributedString *updated = [current mutableCopy];
-            [updated.mutableString setString:replacement];
-            [object setAttributedText:updated];
-            return YES;
+    NSMutableAttributedString *updated = [[NSMutableAttributedString alloc] initWithString:replacement];
+    if (source.length == 0) return updated;
+
+    NSRange firstRange = NSMakeRange(0, 0);
+    NSDictionary *baseAttributes = [source attributesAtIndex:0 effectiveRange:&firstRange];
+    [updated setAttributes:baseAttributes ?: @{} range:NSMakeRange(0, replacement.length)];
+
+    // Render the 5G-A suffix with the same system font family instead of the
+    // Unicode small-cap glyph, which can fall back to a heavier font on iOS 17.
+    if ([replacement isEqualToString:@"5GA"]) {
+        NSMutableDictionary *suffixAttributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
+        UIFont *baseFont = suffixAttributes[NSFontAttributeName];
+        if (baseFont != nil) {
+            UIFont *suffixFont = [UIFont fontWithDescriptor:baseFont.fontDescriptor
+                                                        size:MAX(1.0, baseFont.pointSize * 0.70)];
+            suffixAttributes[NSFontAttributeName] = suffixFont;
+            CGFloat currentOffset = [suffixAttributes[NSBaselineOffsetAttributeName] doubleValue];
+            suffixAttributes[NSBaselineOffsetAttributeName] = @(currentOffset + baseFont.pointSize * 0.18);
         }
+        [updated setAttributes:suffixAttributes range:NSMakeRange(replacement.length - 1, 1)];
     }
-
-    if ([object respondsToSelector:@selector(setAttributedText:)] &&
-        [object respondsToSelector:@selector(font)]) {
-        UIFont *font = [object font];
-        UIColor *color = [object respondsToSelector:@selector(textColor)] ? [object textColor] : nil;
-        NSMutableDictionary *attributes = [NSMutableDictionary dictionary];
-        if (font != nil) attributes[NSFontAttributeName] = font;
-        if (color != nil) attributes[NSForegroundColorAttributeName] = color;
-        [object setAttributedText:[[NSAttributedString alloc] initWithString:replacement attributes:attributes]];
-        return YES;
-    }
-    return NO;
+    return updated;
 }
 
 static BOOL DLSIsStatusBarObject(id object)
@@ -87,20 +90,21 @@ static BOOL DLSIsStatusBarObject(id object)
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
     NSString *replacement = DLSRewriteStatusText(text);
-    if (replacement.length > 0 && DLSApplyTextPreservingStyle(self, replacement)) {
+    if (replacement.length > 0 && self.attributedText.length > 0 && !DLSApplyingText) {
+        DLSApplyingText = YES;
+        [self setAttributedText:DLSAttributedReplacement(self.attributedText, replacement)];
+        DLSApplyingText = NO;
         return;
     }
-    %orig(text);
+    %orig(replacement.length > 0 ? replacement : text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
-    NSString *replacement = DLSRewriteStatusText(text.string);
-    if (replacement.length > 0) {
-        NSMutableAttributedString *updated = [text mutableCopy];
-        [updated.mutableString setString:replacement];
-        %orig(updated);
-    } else {
+    if (DLSApplyingText) {
         %orig(text);
+        return;
     }
+    NSString *replacement = DLSRewriteStatusText(text.string);
+    %orig(replacement.length > 0 ? DLSAttributedReplacement(text, replacement) : text);
 }
 %end
 
@@ -109,7 +113,14 @@ static BOOL DLSIsStatusBarObject(id object)
 - (void)setText:(NSString *)text {
     if (DLSIsStatusBarObject(self)) {
         NSString *replacement = DLSRewriteStatusText(text);
-        if (replacement.length > 0 && DLSApplyTextPreservingStyle(self, replacement)) {
+        if (replacement.length > 0 && self.attributedText.length > 0 && !DLSApplyingText) {
+            DLSApplyingText = YES;
+            [self setAttributedText:DLSAttributedReplacement(self.attributedText, replacement)];
+            DLSApplyingText = NO;
+            return;
+        }
+        if (replacement.length > 0) {
+            %orig(replacement);
             return;
         }
     }
@@ -117,11 +128,13 @@ static BOOL DLSIsStatusBarObject(id object)
 }
 - (void)setAttributedText:(NSAttributedString *)text {
     if (DLSIsStatusBarObject(self)) {
+        if (DLSApplyingText) {
+            %orig(text);
+            return;
+        }
         NSString *replacement = DLSRewriteStatusText(text.string);
         if (replacement.length > 0) {
-            NSMutableAttributedString *updated = [text mutableCopy];
-            [updated.mutableString setString:replacement];
-            %orig(updated);
+            %orig(DLSAttributedReplacement(text, replacement));
             return;
         }
     }
