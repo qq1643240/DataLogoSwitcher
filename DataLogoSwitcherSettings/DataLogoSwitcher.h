@@ -9,7 +9,8 @@
 #import <rootless.h>
 
 #define UserDefaultsChangedNotification "tw.hiraku.datalogoswitcher"
-#define SettingsPath ROOT_PATH_NS(@"/var/mobile/Library/Preferences/tw.hiraku.datalogoswitcher.plist")
+#define SettingsPath @"/var/mobile/Library/Preferences/tw.hiraku.datalogoswitcher.plist"
+#define DLSPreferencesID CFSTR("tw.hiraku.datalogoswitcher")
 
 @interface PSSpecifier (DataLogoSwitcher)
 @property (nonatomic, retain) NSArray *values;
@@ -30,14 +31,12 @@
 
 id getUserDefaultForKey(NSString *key) {
     NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
-    return [defaults objectForKey:key];
+    return defaults[key];
 }
 
 void setUserDefaultForKey(NSString *key, id value) {
     NSMutableDictionary *defaults = [NSMutableDictionary dictionaryWithContentsOfFile:SettingsPath];
-    if (defaults == nil) {
-        defaults = [NSMutableDictionary dictionary];
-    }
+    if (defaults == nil) defaults = [NSMutableDictionary dictionary];
 
     if (value != nil) {
         defaults[key] = value;
@@ -45,14 +44,13 @@ void setUserDefaultForKey(NSString *key, id value) {
         [defaults removeObjectForKey:key];
     }
 
-    // Keep the write atomic so SpringBoard never reads a partial plist.
+    // The plist is authoritative; synchronize CFPreferences only as a notification/cache bridge.
     [defaults writeToFile:SettingsPath atomically:YES];
-    [[NSFileManager defaultManager] setAttributes:@{NSFileModificationDate: [NSDate date]}
-                                      ofItemAtPath:SettingsPath
-                                             error:NULL];
+    CFPreferencesSetAppValue((__bridge CFStringRef)key,
+                             value == nil ? NULL : (__bridge CFPropertyListRef)value,
+                             DLSPreferencesID);
+    CFPreferencesAppSynchronize(DLSPreferencesID);
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                           CFSTR(UserDefaultsChangedNotification),
-                                          NULL,
-                                          NULL,
-                                          TRUE);
+                                          NULL, NULL, TRUE);
 }

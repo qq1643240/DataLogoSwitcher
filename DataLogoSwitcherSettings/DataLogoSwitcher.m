@@ -3,6 +3,7 @@
 #import <errno.h>
 #import <sys/wait.h>
 #include <unistd.h>
+#include <dispatch/dispatch.h>
 
 static BOOL run_command(const char *path, char *const argv[])
 {
@@ -38,56 +39,56 @@ static BOOL run_command(const char *path, char *const argv[])
         NSMutableArray *specifiers = [NSMutableArray array];
         
         [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
-		PSSpecifier *logo3G = [PSSpecifier preferenceSpecifierNamed:@"3G Logo" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
+		PSSpecifier *logo3G = [PSSpecifier preferenceSpecifierNamed:@"3G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
 		[logo3G setIdentifier:@"3G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
             logo3G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@99];
             logo3G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE Plus",
+                @"4G 增强",
                 @"5GE",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
                 @"5G UC",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo3G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
             logo3G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@99];
             logo3G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE Plus",
+                @"4G 增强",
                 @"5GE",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo3G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
             logo3G.values = @[@0,@1,@2,@3,@4,@5,@99];
             logo3G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE Plus",
+                @"4G 增强",
                 @"5GE",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo3G.values];
         }
 		else {
             logo3G.values = @[@0,@1,@2];
             logo3G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE"
             ] forKeys:logo3G.values];
@@ -96,56 +97,56 @@ static BOOL run_command(const char *path, char *const argv[])
 		[specifiers addObject:logo3G];
 
         [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
-        PSSpecifier *logo4G = [PSSpecifier preferenceSpecifierNamed:@"4G/LTE Logo" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
+        PSSpecifier *logo4G = [PSSpecifier preferenceSpecifierNamed:@"4G/LTE 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
 		[logo4G setIdentifier:@"4G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
             logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE Plus",
+                @"4G 增强",
                 @"5GE",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
                 @"5G UC",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
             logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
-                @"LTE Plus",
+                @"4G 增强",
                 @"5GE",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
             logo4G.values = @[@0,@1,@2,@3,@4,@5,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE",
                 @"LTE-A",
                 @"LTE+",
                 @"5GE",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo4G.values];
         }
         else {
             logo4G.values = @[@0,@1,@2];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"4G",
                 @"LTE"
             ] forKeys:logo4G.values];
@@ -155,42 +156,42 @@ static BOOL run_command(const char *path, char *const argv[])
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
             [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
-            PSSpecifier *logo5G = [PSSpecifier preferenceSpecifierNamed:@"5G Logo" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
+            PSSpecifier *logo5G = [PSSpecifier preferenceSpecifierNamed:@"5G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
             [logo5G setIdentifier:@"5G"];
 
             logo5G.values = @[@0,@1,@2,@3,@4,@5,@99];
             logo5G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
                 @"5G UC",
                 @"5Gᴀ",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
             [specifiers addObject:logo5G];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
             [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
-            PSSpecifier *logo5G = [PSSpecifier preferenceSpecifierNamed:@"5G Logo" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
+            PSSpecifier *logo5G = [PSSpecifier preferenceSpecifierNamed:@"5G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
             [logo5G setIdentifier:@"5G"];
 
             logo5G.values = @[@0,@1,@2,@3,@99];
             logo5G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
-                @"Default",
+                @"默认",
                 @"5G",
-                @"5G Plus",
+                @"5G 增强",
                 @"5G UWB",
-                @"Custom"
+                @"自定义"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
             [specifiers addObject:logo5G];
         }
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
-            PSSpecifier *customStringGroup = [PSSpecifier groupSpecifierWithName:@"Custom String"];
-            [customStringGroup setProperty:@"To use custom strings, please choose \"Custom\" from the logo options first." forKey:@"footerText"];
+            PSSpecifier *customStringGroup = [PSSpecifier groupSpecifierWithName:@"自定义文字"];
+            [customStringGroup setProperty:@"请选择上方对应的“自定义”选项后输入文字。" forKey:@"footerText"];
             [specifiers addObject:customStringGroup];
 
             PSSpecifier *custom3GStringCell = [PSSpecifier preferenceSpecifierNamed:@"3G" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
@@ -203,7 +204,7 @@ static BOOL run_command(const char *path, char *const argv[])
         }
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
+            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G 自定义文字" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
             [custom5GStringCell setIdentifier:@"custom5GString"];
             [specifiers addObject:custom5GStringCell];
         }
@@ -212,7 +213,7 @@ static BOOL run_command(const char *path, char *const argv[])
         [footSpecifier setProperty:@"© 2011-2023 Hiraku (@hiraku_dev)" forKey:@"footerText"];
         [specifiers addObject:footSpecifier];
 
-        PSSpecifier *respringButton = [PSSpecifier preferenceSpecifierNamed:@"Save and Respring" target:self set:nil get:nil detail:nil cell:[PSTableCell cellTypeFromString:@"PSButtonCell"] edit:nil];
+        PSSpecifier *respringButton = [PSSpecifier preferenceSpecifierNamed:@"保存并注销" target:self set:nil get:nil detail:nil cell:[PSTableCell cellTypeFromString:@"PSButtonCell"] edit:nil];
         respringButton->action = @selector(respring);
         [specifiers addObject:respringButton];
 
@@ -244,21 +245,28 @@ static BOOL run_command(const char *path, char *const argv[])
 }
 
 -(void)respring {
-    // sbreload is the supported userspace restart path on modern rootless jailbreaks.
-    char *const sbreloadArgs[] = {(char *)ROOT_PATH("/usr/bin/sbreload"), NULL};
-    if (run_command(ROOT_PATH("/usr/bin/sbreload"), sbreloadArgs)) {
-        return;
-    }
+    // Commit the active custom-text field before reading preferences.
+    [self.view endEditing:YES];
 
-    const char *killallPath = ROOT_PATH("/usr/bin/killall");
-    char *const springBoardArgs[] = {(char *)killallPath, "-9", "SpringBoard", NULL};
-    char *const backboardArgs[] = {(char *)killallPath, "-9", "backboardd", NULL};
-    char *const lsdArgs[] = {(char *)killallPath, "-9", "lsd", NULL};
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Give Preferences a short moment to finish the editing callback.
+        usleep(250000);
 
-    // Run each service separately. A missing service must not prevent the others.
-    run_command(killallPath, springBoardArgs);
-    run_command(killallPath, backboardArgs);
-    run_command(killallPath, lsdArgs);
+        // sbreload is the supported userspace restart path on modern jailbreaks.
+        char *const sbreloadArgs[] = {(char *)ROOT_PATH("/usr/bin/sbreload"), NULL};
+        if (run_command(ROOT_PATH("/usr/bin/sbreload"), sbreloadArgs)) {
+            return;
+        }
+
+        const char *killallPath = ROOT_PATH("/usr/bin/killall");
+        char *const springBoardArgs[] = {(char *)killallPath, "-9", "SpringBoard", NULL};
+        char *const backboardArgs[] = {(char *)killallPath, "-9", "backboardd", NULL};
+        char *const lsdArgs[] = {(char *)killallPath, "-9", "lsd", NULL};
+
+        run_command(killallPath, springBoardArgs);
+        run_command(killallPath, backboardArgs);
+        run_command(killallPath, lsdArgs);
+    });
 }
 //=============================================================================
 @end

@@ -1,8 +1,106 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <version.h>
 #import <rootless.h>
+#import <objc/runtime.h>
+#import <dispatch/dispatch.h>
 
-#define SettingsPath ROOT_PATH_NS(@"/var/mobile/Library/Preferences/tw.hiraku.datalogoswitcher.plist")
+#define SettingsPath @"/var/mobile/Library/Preferences/tw.hiraku.datalogoswitcher.plist"
+#define DLSPreferencesID CFSTR("tw.hiraku.datalogoswitcher")
+
+static NSDictionary *DLSSettings(void)
+{
+    NSDictionary *settings = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    return settings ?: @{};
+}
+
+static NSString *DLSRewriteStatusText(NSString *text)
+{
+    if (![text isKindOfClass:NSString.class] || text.length == 0) return nil;
+    NSDictionary *settings = DLSSettings();
+
+    NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", nil];
+    if ([fiveG containsObject:text]) {
+        NSInteger value = [settings[@"5G"] integerValue];
+        if (value == 5) return @"5Gᴀ";
+        if (value == 99 && [settings[@"custom5GString"] length] > 0) return settings[@"custom5GString"];
+    }
+
+    NSSet *fourG = [NSSet setWithObjects:@"4G", @"LTE", @"LTE+", @"LTE-A", nil];
+    if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 99 && [settings[@"custom4GString"] length] > 0) {
+        return settings[@"custom4GString"];
+    }
+
+    NSSet *threeG = [NSSet setWithObjects:@"3G", @"H", @"H+", nil];
+    if ([threeG containsObject:text] && [settings[@"3G"] integerValue] == 99 && [settings[@"custom3GString"] length] > 0) {
+        return settings[@"custom3GString"];
+    }
+    return nil;
+}
+
+static BOOL DLSIsStatusBarObject(id object)
+{
+    id current = object;
+    for (NSUInteger depth = 0; current != nil && depth < 10; depth++) {
+        NSString *name = NSStringFromClass(object_getClass(current));
+        if ([name rangeOfString:@"StatusBar" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [name rangeOfString:@"STUI" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+            [name rangeOfString:@"Cellular" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            return YES;
+        }
+        current = [current respondsToSelector:@selector(superview)] ? [current superview] : nil;
+    }
+    return NO;
+}
+
+// iOS 17 moved the visible carrier text into SystemStatusUI.
+%group GiOS17
+%hook STUIStatusBarStringView
+- (void)setText:(NSString *)text {
+    NSString *replacement = DLSRewriteStatusText(text);
+    %orig(replacement ?: text);
+}
+- (void)setAttributedText:(NSAttributedString *)text {
+    NSString *replacement = DLSRewriteStatusText(text.string);
+    if (replacement.length > 0) {
+        NSMutableAttributedString *updated = [text mutableCopy];
+        [updated.mutableString setString:replacement];
+        %orig(updated);
+    } else {
+        %orig(text);
+    }
+}
+%end
+
+// Some iOS 17 builds use a UILabel subclass for the final rendered text.
+%hook UILabel
+- (void)setText:(NSString *)text {
+    if (DLSIsStatusBarObject(self)) {
+        NSString *replacement = DLSRewriteStatusText(text);
+        if (replacement.length > 0) {
+            %orig(replacement);
+            return;
+        }
+    }
+    %orig(text);
+}
+- (void)setAttributedText:(NSAttributedString *)text {
+    if (DLSIsStatusBarObject(self)) {
+        NSString *replacement = DLSRewriteStatusText(text.string);
+        if (replacement.length > 0) {
+            NSMutableAttributedString *updated = [text mutableCopy];
+            [updated.mutableString setString:replacement];
+            %orig(updated);
+            return;
+        }
+    }
+    %orig(text);
+}
+%end
+%end
+
+//Before iOS 12.2
 
 //Before iOS 12.2
 typedef NS_ENUM(NSInteger, connectionType) {
@@ -69,7 +167,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 {
     int connectionType = %orig;
 
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     if (connectionType == NewConnectionUmts || 
         connectionType == NewConnectionHsdpa)
     {
@@ -170,7 +268,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 
 %hook _UIStatusBarCellularItem
 - (NSString *)_stringForCellularType:(int)connectionType {
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     
     if ((connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa) &&
         [defaults[@"3G"] intValue] == 99) {
@@ -205,8 +303,6 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     return %orig;
 }
 %end
-%end
-
 
 %group GiOS12_2
 %hook SBTelephonySubscriptionContext
@@ -214,7 +310,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 {
     int connectionType = %orig;
 
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     if (connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa)
     {
         switch([defaults[@"3G"] intValue])
@@ -267,7 +363,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 
 %hook _UIStatusBarCellularItem
 - (NSString *)_stringForCellularType:(int)connectionType {
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     
     if ((connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa) &&
         [defaults[@"3G"] intValue] == 99) {
@@ -295,7 +391,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 {
     int connectionType = %orig;
 
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     if (connectionType == ConnectionUmts || connectionType == ConnectionHsdpa)
     {
         switch([defaults[@"3G"] intValue])
@@ -345,7 +441,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 - (int)dataConnectionType 
 {
     int connectionType = %orig;
-    NSDictionary *defaults = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
+    NSDictionary *defaults = DLSSettings();
     
     if (connectionType == ConnectionUmts || connectionType == ConnectionHsdpa)
     {
@@ -406,5 +502,19 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     else 
     {
         %init(GiOS13);
+        // SystemStatusUI may load after the tweak constructor on iOS 17.
+        static BOOL modernHookInstalled = NO;
+        if (objc_getClass("STUIStatusBarStringView") != Nil) {
+            modernHookInstalled = YES;
+            %init(GiOS17);
+        } else {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+                           dispatch_get_main_queue(), ^{
+                if (!modernHookInstalled && objc_getClass("STUIStatusBarStringView") != Nil) {
+                    modernHookInstalled = YES;
+                    %init(GiOS17);
+                }
+            });
+        }
     }
 }
