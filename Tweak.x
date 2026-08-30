@@ -128,7 +128,7 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     return updated;
 }
 
-static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
+static __attribute__((unused)) NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
 {
     UIFont *font = nil;
     if ([object respondsToSelector:@selector(font)]) {
