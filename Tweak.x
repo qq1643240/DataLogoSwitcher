@@ -125,7 +125,7 @@ static BOOL DLSIsStatusBarObject(id object)
         DLSApplyingText = NO;
         return;
     }
-    if (replacement.length > 0 && !DLSApplyingText && [self respondsToSelector:@selector(setAttributedText:)]) {
+    if (replacement.length > 0 && !DLSApplyingText && ((BOOL (*)(id, SEL, SEL))objc_msgSend)(self, @selector(respondsToSelector:), @selector(setAttributedText:))) {
         DLSApplyingText = YES;
         ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
         DLSApplyingText = NO;
