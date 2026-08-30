@@ -103,7 +103,7 @@ static BOOL run_command(const char *path, char *const argv[])
 		[logo4G setIdentifier:@"4G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@6,@7,@8,@9,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -120,7 +120,7 @@ static BOOL run_command(const char *path, char *const argv[])
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@6,@7,@8,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -136,7 +136,7 @@ static BOOL run_command(const char *path, char *const argv[])
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@5,@6,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",

@@ -21,17 +21,6 @@ static NSString *DLSRewriteStatusText(NSString *text)
     if (![text isKindOfClass:NSString.class] || text.length == 0) return nil;
     NSDictionary *settings = DLSSettings();
 
-    NSSet *fourGCompact = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", nil];
-    NSInteger fourGValue = [settings[@"4G"] integerValue];
-
-    // Apply built-in 4G choices directly in the iOS 17 text path.
-    // The modem-type hook supplies the native host glyphs, while this keeps
-    // the visible result deterministic for STUIStatusBarStringView.
-    if ([fourGCompact containsObject:text]) {
-        if (fourGValue == 4) return @"4G+";
-        if (fourGValue == 5) return @"4Gᴀ";
-    }
-
     NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
@@ -40,14 +29,12 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", nil];
-    NSInteger selected4G = [settings[@"4G"] integerValue];
-    if ([fourG containsObject:text]) {
-        if (selected4G == 4) return @"4G+";
-        if (selected4G == 5) return @"4Gᴀ";
-        if (selected4G == 99 && [settings[@"custom4GString"] length] > 0) {
-            return settings[@"custom4GString"];
-        }
+    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
+    if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 10) {
+        return @"4GA";
+    }
+    if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 99 && [settings[@"custom4GString"] length] > 0) {
+        return settings[@"custom4GString"];
     }
 
     NSSet *threeG = [NSSet setWithObjects:@"3G", @"H", @"H+", nil];
@@ -84,8 +71,8 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
 
     // 4G+ must remain vertically centered. Do not apply the compact 5G suffix style.
-    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4Gᴀ"];
-    if (!compactSuffix) {
+    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"];
+    if (!compact5GSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
@@ -93,16 +80,11 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // Find the last native attribute run that differs from the body.
-    // This handles both 5G+ (suffix at index 2) and LTE+/4G+ (suffix
-    // at a later index) without assuming a fixed source-string length.
+    // 5G A/custom text is deliberately mapped to NewConnection5GPlus.
+    // Its third glyph (+) is the authoritative native compact suffix style.
     NSDictionary *suffixAttributes = nil;
-    for (NSUInteger index = source.length; index > 0; index--) {
-        NSDictionary *candidate = [source attributesAtIndex:index - 1 effectiveRange:NULL];
-        if (![candidate isEqualToDictionary:prefixAttributes]) {
-            suffixAttributes = candidate;
-            break;
-        }
+    if (compact5GSuffix && source.length > 2) {
+        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
     }
     if (suffixAttributes == nil) {
         suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
@@ -131,8 +113,7 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
     NSMutableDictionary *suffix = [prefix mutableCopy];
-    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4Gᴀ"];
-    if (replacement.length > 2 && compactSuffix && font != nil) {
+    if (replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"]) && font != nil) {
         UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
                                                     size:MAX(1.0, font.pointSize * 0.58)];
         suffix[NSFontAttributeName] = suffixFont;
@@ -343,20 +324,16 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnectionLtePlus;
             case 5:
-                // Use native LTE+ as the host for 4Gᴀ.
-                return NewConnectionLtePlus;
-            case 6:
                 return NewConnection5GE;
-            case 7:
+            case 6:
                 return NewConnection5G;
-            case 8:
+            case 7:
                 return NewConnection5GPlus;
-            case 9:
+            case 8:
                 return NewConnection5GUWB;
-            case 10:
+            case 9:
                 return NewConnection5GUC;
-            case 99:
-                // Use native LTE+ as the host for custom 4G text.
+            case 10:
                 return NewConnectionLtePlus;
             default:
                 break;
@@ -413,17 +390,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLteA ||
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 5) {
-        return @"4Gᴀ";
-    }
-
-    if ((connectionType == NewConnection4GOverride ||
-        connectionType == NewConnectionLte ||
-        connectionType == NewConnectionLteA ||
-        connectionType == NewConnectionLtePlus ||
-        connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 4) {
-        return @"4G+";
+        [defaults[@"4G"] intValue] == 10) {
+        return @"4GA";
     }
 
     if ((connectionType == NewConnection4GOverride ||
@@ -503,11 +471,7 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnectionLtePlus;
             case 5:
-                return NewConnectionLtePlus;
-            case 6:
                 return NewConnection5GE;
-            case 99:
-                return NewConnectionLtePlus;
             default:
                 break;
         }
@@ -531,17 +495,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLteA ||
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 5) {
-        return @"4Gᴀ";
-    }
-
-    if ((connectionType == NewConnection4GOverride ||
-        connectionType == NewConnectionLte ||
-        connectionType == NewConnectionLteA ||
-        connectionType == NewConnectionLtePlus ||
-        connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 4) {
-        return @"4G+";
+        [defaults[@"4G"] intValue] == 10) {
+        return @"4GA";
     }
 
     if ((connectionType == NewConnection4GOverride ||
