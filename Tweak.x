@@ -30,8 +30,8 @@ static NSString *DLSRewriteStatusText(NSString *text)
     }
 
     NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
-    if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 10) {
-        return @"4GA";
+    if ([fourG containsObject:text] && ([settings[@"4G"] integerValue] == 4 || [settings[@"4G"] integerValue] == 10)) {
+        return [settings[@"4G"] integerValue] == 4 ? @"4G+" : @"4Gᴀ";
     }
     if ([fourG containsObject:text] && [settings[@"4G"] integerValue] == 99 && [settings[@"custom4GString"] length] > 0) {
         return settings[@"custom4GString"];
@@ -71,7 +71,7 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
 
     // 4G+ must remain vertically centered. Do not apply the compact 5G suffix style.
-    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"];
+    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"] || [replacement hasPrefix:@"4Gᴀ"];
     if (!compact5GSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
@@ -113,7 +113,7 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
     NSMutableDictionary *suffix = [prefix mutableCopy];
-    if (replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"]) && font != nil) {
+    if (replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4GA"] || [replacement hasPrefix:@"4Gᴀ"]) && font != nil) {
         UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
                                                     size:MAX(1.0, font.pointSize * 0.58)];
         suffix[NSFontAttributeName] = suffixFont;
@@ -390,15 +390,6 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnectionLteA ||
         connectionType == NewConnectionLtePlus ||
         connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 10) {
-        return @"4GA";
-    }
-
-    if ((connectionType == NewConnection4GOverride ||
-        connectionType == NewConnectionLte ||
-        connectionType == NewConnectionLteA ||
-        connectionType == NewConnectionLtePlus ||
-        connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 99) {
         return defaults[@"custom4GString"] ? defaults[@"custom4GString"] : @"4G";
     }
@@ -488,15 +479,6 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     if ((connectionType == NewConnectionUmts || connectionType == NewConnectionHsdpa) &&
         [defaults[@"3G"] intValue] == 99) {
         return defaults[@"custom3GString"] ? defaults[@"custom3GString"] : @"3G";
-    }
-
-    if ((connectionType == NewConnection4GOverride ||
-        connectionType == NewConnectionLte ||
-        connectionType == NewConnectionLteA ||
-        connectionType == NewConnectionLtePlus ||
-        connectionType == NewConnection5GE) &&
-        [defaults[@"4G"] intValue] == 10) {
-        return @"4GA";
     }
 
     if ((connectionType == NewConnection4GOverride ||
@@ -630,8 +612,14 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     }
     else
     {
-        %init(GiOS13);
-        // Safe when absent on older systems; Logos skips an unavailable class.
-        %init(GiOS17);
+        if (NSClassFromString(@"STUIStatusBarStringView") != nil)
+        {
+            // iOS 17 uses text replacement only; legacy enum values can render as ?.
+            %init(GiOS17);
+        }
+        else
+        {
+            %init(GiOS13);
+        }
     }
 }
