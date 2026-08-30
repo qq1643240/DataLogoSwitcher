@@ -19,5 +19,5 @@ endif
 
 GO_EASY_ON_ME = 1
 
-include theos/makefiles/common.mk
+include $(THEOS_MAKE_PATH)/common.mk
 include $(THEOS_MAKE_PATH)/bundle.mk
