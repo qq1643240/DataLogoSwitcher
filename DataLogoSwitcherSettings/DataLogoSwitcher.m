@@ -256,15 +256,9 @@ static BOOL run_command(const char *path, char *const argv[])
     char *const lsdArgs[] = {(char *)killallPath, "-9", "lsd", NULL};
 
     // Run each service separately. A missing service must not prevent the others.
-    if (run_command(killallPath, springBoardArgs) && run_command(killallPath, backboardArgs)) {
-        run_command(killallPath, lsdArgs);
-        return;
-    }
-
-    // Legacy fallback for non-rootless jailbreaks without ROOT_PATH tooling.
-    system("/usr/bin/killall -9 SpringBoard");
-    system("/usr/bin/killall -9 backboardd");
-    system("/usr/bin/killall -9 lsd");
+    run_command(killallPath, springBoardArgs);
+    run_command(killallPath, backboardArgs);
+    run_command(killallPath, lsdArgs);
 }
 //=============================================================================
 @end
