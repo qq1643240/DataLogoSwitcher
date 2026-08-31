@@ -135,13 +135,22 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     return updated;
 }
 
-// iOS 17 supplies an attributed cellular label after updating its text.  Hook
-// only this one-way update: setText: and setAttributedText: must never call
-// each other during Wi-Fi/radio changes.
+// iOS 17 may send the final cellular label through setText: without a later
+// attributed update. Replace only the argument passed to the original method;
+// never call setAttributedText: here, so Wi-Fi/radio transitions cannot loop.
 %group GiOS17
 %hook STUIStatusBarStringView
+- (void)setText:(NSString *)text {
+    NSString *replacement = DLSRewriteStatusText(text);
+    %orig(replacement.length > 0 ? replacement : text);
+}
 - (void)setAttributedText:(NSAttributedString *)text {
     NSString *replacement = DLSRewriteStatusText(text.string);
+    // When setText: has already supplied 4Gᴀ/5Gᴀ, apply a glyph-safe suffix
+    // font if SystemStatusUI follows with its attributed refresh.
+    if (replacement.length == 0 && [text.string hasSuffix:@"ᴀ"]) {
+        replacement = text.string;
+    }
     %orig(replacement.length > 0 ? DLSAttributedReplacement(text, replacement) : text);
 }
 %end
@@ -318,7 +327,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
 
 %hook STTelephonyCarrierBundleInfo
 - (BOOL)LTEConnectionShows4G {
-    return NO;
+    // The user-facing default for LTE on this tweak is 4G, not LTE.
+    return YES;
 }
 %end
 
@@ -596,8 +606,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     }
     else
     {
-        // iOS 17 keeps the cellular host and rewrites only the final
-        // attributed glyphs: LTE+ for 4G+/4Gᴀ, 5G+ for 5Gᴀ.
+        // iOS 13+ preserves the actual cellular host. iOS 17 replaces the
+        // final text safely in setText:/setAttributedText: without cross-calls.
         %init(GiOS13);
         %init(GiOS17);
     }
