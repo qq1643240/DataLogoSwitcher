@@ -128,27 +128,29 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     return updated;
 }
 
-static __attribute__((unused)) NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
+static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
 {
     UIFont *font = nil;
     if ([object respondsToSelector:@selector(font)]) {
         font = ((id (*)(id, SEL))objc_msgSend)(object, @selector(font));
     }
+    if (font == nil) font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
     UIColor *color = nil;
     if ([object respondsToSelector:@selector(textColor)]) {
         color = ((id (*)(id, SEL))objc_msgSend)(object, @selector(textColor));
     }
 
-    NSMutableDictionary *prefix = [NSMutableDictionary dictionary];
-    if (font != nil) prefix[NSFontAttributeName] = font;
+    NSMutableDictionary *prefix = [NSMutableDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
     if (color != nil) prefix[NSForegroundColorAttributeName] = color;
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
-    NSMutableDictionary *suffix = [prefix mutableCopy];
-    if (replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"]) && font != nil) {
-        UIFont *suffixFont = [UIFont fontWithDescriptor:font.fontDescriptor
-                                                    size:MAX(1.0, font.pointSize * 0.58)];
-        suffix[NSFontAttributeName] = suffixFont;
+    BOOL compact = replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"]);
+    if (compact) {
+        NSMutableDictionary *suffix = [DLSCompactSuffixAttributes(prefix) mutableCopy];
+        if ([replacement hasSuffix:@"ᴀ"]) {
+            UIFont *regular = DLSRegularGlyphFont(suffix[NSFontAttributeName]);
+            if (regular != nil) suffix[NSFontAttributeName] = regular;
+        }
         [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
     }
     return result;
@@ -173,8 +175,20 @@ static BOOL DLSIsStatusBarObject(id object)
 %group GiOS17
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
-    // Let SystemStatusUI create the native 5G+/LTE+ attributed suffix run.
-    // The setAttributedText: hook below changes only the displayed suffix.
+    if (DLSApplyingText) {
+        %orig(text);
+        return;
+    }
+    // Some iOS 17 status views never call setAttributedText:. Commit an
+    // explicit attributed replacement so the private status font cannot turn
+    // ᴀ into '?' and the host label cannot overwrite custom text.
+    NSString *replacement = DLSRewriteStatusText(text);
+    if (replacement.length > 0) {
+        DLSApplyingText = YES;
+        [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
+        DLSApplyingText = NO;
+        return;
+    }
     %orig(text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
@@ -190,8 +204,21 @@ static BOOL DLSIsStatusBarObject(id object)
 // Some iOS 17 builds use a UILabel subclass for the final rendered text.
 %hook UILabel
 - (void)setText:(NSString *)text {
-    // Do not replace ordinary text before the system has generated its
-    // native compact suffix attributed run.
+    if (DLSApplyingText) {
+        %orig(text);
+        return;
+    }
+    // UILabel is the final renderer on some iOS 17 builds. Use an attributed
+    // string here too so 4Gᴀ/5Gᴀ has a font with a verified ᴀ glyph.
+    if (DLSIsStatusBarObject(self)) {
+        NSString *replacement = DLSRewriteStatusText(text);
+        if (replacement.length > 0) {
+            DLSApplyingText = YES;
+            [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
+            DLSApplyingText = NO;
+            return;
+        }
+    }
     %orig(text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
@@ -328,11 +355,12 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 3:
                 return NewConnectionLteA;
             case 4:
-                // Keep the LTE-family host so 4G+ remains on the 4G path.
-                return NewConnectionLtePlus;
+                // Keep the real 4G host. Some iOS 17 SystemStatusUI builds
+                // do not render the private LTE+ enum and show '?'.
+                return connectionType;
             case 10:
-                // 4Gᴀ uses the same LTE+ compact-suffix host, not 5G+.
-                return NewConnectionLtePlus;
+                // 4Gᴀ is rendered in the final text layer on this 4G host.
+                return connectionType;
             case 5:
                 return NewConnection5GE;
             case 6:
@@ -366,11 +394,12 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnection5GUC;
             case 5:
-                // Use the native 5G+ renderer as the host for the compact suffix.
-                return NewConnection5GPlus;
+                // Keep the actual 5G-family host; iOS 17 rewrites the final
+                // glyphs to 5Gᴀ with a font that contains U+1D00.
+                return connectionType;
             case 99:
-                // Custom 5G text also needs the native compact-suffix style.
-                return NewConnection5GPlus;
+                // Custom 5G text must not force the status bar into 5G+.
+                return connectionType;
         }
     }
 
