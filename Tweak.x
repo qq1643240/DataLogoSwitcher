@@ -172,6 +172,9 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
     if (font != nil) prefix[NSFontAttributeName] = font;
     if (color != nil) prefix[NSForegroundColorAttributeName] = color;
 
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement
+                                                                                 attributes:prefix];
+
     // Fallback is only used when SystemStatusUI has no attributed run yet.
     // Match the 4G renderer above: never let an LTE+ heavy host leak into
     // 4G+, 4Gᴀ, or custom 4G text. The 5G fallback remains unchanged.
