@@ -111,9 +111,6 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     BOOL compact4GSuffix = [replacement isEqualToString:@"4G+"] ||
                            [replacement isEqualToString:@"4Gᴀ"];
     if (compact4GSuffix) {
-        NSUInteger prefixLength = 2;
-        [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
-
         NSDictionary *suffixAttributes = nil;
         NSString *sourceString = source.string ?: @"";
         NSUInteger sourceSuffixIndex = 0;
@@ -128,16 +125,34 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
                 suffixAttributes = candidate;
             }
         }
-        if (suffixAttributes == nil) {
-            suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+
+        // LTE+ can expose a full-size 4G font for the final run. Keep
+        // its color/kern attributes, but use the compact size derived from
+        // the 4G body font. This is 4G-only; the locked 5G branch is above.
+        NSMutableDictionary *compactAttributes = suffixAttributes != nil
+            ? [suffixAttributes mutableCopy]
+            : [prefixAttributes mutableCopy];
+        UIFont *bodyFont = prefixAttributes[NSFontAttributeName];
+        if (bodyFont != nil) {
+            compactAttributes[NSFontAttributeName] =
+                [UIFont fontWithDescriptor:bodyFont.fontDescriptor
+                                      size:MAX(1.0, bodyFont.pointSize * 0.58)];
         }
-        [updated setAttributes:suffixAttributes
-                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        [compactAttributes removeObjectForKey:NSBaselineOffsetAttributeName];
+        suffixAttributes = compactAttributes;
+        if (compact4GSuffix) {
+            NSUInteger prefixLength = 2;
+            [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
+            [updated setAttributes:suffixAttributes
+                             range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        } else {
+            // 4G custom text uses the LTE+ compact run consistently instead
+            // of inheriting the large/bold 4G body font.
+            [updated setAttributes:suffixAttributes range:NSMakeRange(0, replacement.length)];
+        }
         return updated;
     }
 
-    // 4G custom text remains on the normal 4G body style. This is deliberately
-    // separate from the locked 5G path above.
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
     return updated;
 }
