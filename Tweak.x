@@ -73,6 +73,32 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     return attributes;
 }
 
+static NSDictionary *DLSFourGRegularAttributes(NSDictionary *baseAttributes)
+{
+    NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
+    UIFont *font = attributes[NSFontAttributeName];
+    if (font != nil) {
+        // LTE/LTE+ is a heavy carrier run on this iOS 17 renderer. Use the
+        // actual system Regular face rather than merely stripping a symbolic
+        // trait (which does not remove the descriptor's weight axis).
+        attributes[NSFontAttributeName] = [UIFont systemFontOfSize:font.pointSize
+                                                             weight:UIFontWeightRegular];
+    }
+    return attributes;
+}
+
+static NSDictionary *DLSFourGCompactAttributes(NSDictionary *bodyAttributes)
+{
+    NSMutableDictionary *attributes = [DLSFourGRegularAttributes(bodyAttributes) mutableCopy];
+    UIFont *font = attributes[NSFontAttributeName];
+    if (font != nil) {
+        attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
+                                                                  size:MAX(1.0, font.pointSize * 0.58)];
+    }
+    [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
+    return attributes;
+}
+
 static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
 {
     if (replacement.length == 0) return source;
@@ -106,49 +132,23 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
         return updated;
     }
 
-    // 4G+ / 4Gᴀ use the same two-part layout, but must stay on the
-    // 4G text path. Never route these through the locked 5G channel.
+    // 4G is independent from the locked 5G renderer. Normalize the 4G
+    // carrier body to Regular; special 4G+ / 4Gᴀ labels then give only
+    // their final glyph the compact size. Custom 4G text uses Regular body
+    // metrics throughout instead of inheriting the heavy LTE+ host run.
+    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
     BOOL compact4GSuffix = [replacement isEqualToString:@"4G+"] ||
                            [replacement isEqualToString:@"4Gᴀ"];
-    if (compact4GSuffix) {
-        NSDictionary *suffixAttributes = nil;
-        NSString *sourceString = source.string ?: @"";
-        NSUInteger sourceSuffixIndex = 0;
-        if ([sourceString hasPrefix:@"4G"] && source.length > 2) {
-            sourceSuffixIndex = 2;
-        } else if ([sourceString hasPrefix:@"LTE"] && source.length > 3) {
-            sourceSuffixIndex = 3;
-        }
-        if (sourceSuffixIndex > 0) {
-            NSDictionary *candidate = [source attributesAtIndex:sourceSuffixIndex effectiveRange:NULL];
-            if (![candidate isEqualToDictionary:prefixAttributes]) {
-                suffixAttributes = candidate;
-            }
-        }
-
-        // LTE+ can expose a full-size 4G font for the final run. Keep
-        // its color/kern attributes, but use the compact size derived from
-        // the 4G body font. This is 4G-only; the locked 5G branch is above.
-        NSMutableDictionary *compactAttributes = suffixAttributes != nil
-            ? [suffixAttributes mutableCopy]
-            : [prefixAttributes mutableCopy];
-        UIFont *bodyFont = prefixAttributes[NSFontAttributeName];
-        if (bodyFont != nil) {
-            compactAttributes[NSFontAttributeName] =
-                [UIFont fontWithDescriptor:bodyFont.fontDescriptor
-                                      size:MAX(1.0, bodyFont.pointSize * 0.58)];
-        }
-        [compactAttributes removeObjectForKey:NSBaselineOffsetAttributeName];
-        suffixAttributes = compactAttributes;
+    if (compact4GSuffix || fourGMode == 99) {
+        NSDictionary *regularBodyAttributes = DLSFourGRegularAttributes(prefixAttributes);
         if (compact4GSuffix) {
+            NSDictionary *compactSuffixAttributes = DLSFourGCompactAttributes(regularBodyAttributes);
             NSUInteger prefixLength = 2;
-            [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
-            [updated setAttributes:suffixAttributes
+            [updated setAttributes:regularBodyAttributes range:NSMakeRange(0, prefixLength)];
+            [updated setAttributes:compactSuffixAttributes
                              range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
         } else {
-            // 4G custom text uses the LTE+ compact run consistently instead
-            // of inheriting the large/bold 4G body font.
-            [updated setAttributes:suffixAttributes range:NSMakeRange(0, replacement.length)];
+            [updated setAttributes:regularBodyAttributes range:NSMakeRange(0, replacement.length)];
         }
         return updated;
     }
@@ -172,11 +172,26 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
     if (font != nil) prefix[NSFontAttributeName] = font;
     if (color != nil) prefix[NSForegroundColorAttributeName] = color;
 
-    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
+    // Fallback is only used when SystemStatusUI has no attributed run yet.
+    // Match the 4G renderer above: never let an LTE+ heavy host leak into
+    // 4G+, 4Gᴀ, or custom 4G text. The 5G fallback remains unchanged.
+    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
+    BOOL compact4G = [replacement isEqualToString:@"4G+"] ||
+                     [replacement isEqualToString:@"4Gᴀ"];
+    if ((compact4G || fourGMode == 99) && font != nil) {
+        NSDictionary *regularBody = DLSFourGRegularAttributes(prefix);
+        if (compact4G) {
+            NSDictionary *compactSuffix = DLSFourGCompactAttributes(regularBody);
+            [result setAttributes:regularBody range:NSMakeRange(0, 2)];
+            [result setAttributes:compactSuffix range:NSMakeRange(2, replacement.length - 2)];
+        } else {
+            [result setAttributes:regularBody range:NSMakeRange(0, replacement.length)];
+        }
+        return result;
+    }
+
     NSMutableDictionary *suffix = [prefix mutableCopy];
-    BOOL compactSuffix = [replacement isEqualToString:@"5Gᴀ"] ||
-                         [replacement isEqualToString:@"4G+"] ||
-                         [replacement isEqualToString:@"4Gᴀ"];
+    BOOL compactSuffix = [replacement isEqualToString:@"5Gᴀ"];
     if (compactSuffix && font != nil) {
         suffix[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
                                                              size:MAX(1.0, font.pointSize * 0.58)];
