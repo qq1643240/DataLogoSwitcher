@@ -32,7 +32,7 @@ static NSString *DLSRewriteStatusText(NSString *text)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
-        fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
+        fourG = [NSSet setWithObjects:@"4G", @"LTE", @"LTE+", @"LTE-A", nil];
     });
     NSDictionary *settings = DLSSettings();
 
@@ -43,11 +43,14 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
+    // 4.0.19: 4G+ remains entirely native through the LTE+ connection
+    // host. Only 4Gᴀ and custom 4G enter the text replacement path.
     if ([fourG containsObject:text]) {
         NSInteger value = [settings[@"4G"] integerValue];
-        if (value == 4) return @"4G+";
         if (value == 10) return @"4Gᴀ";
-        if (value == 99 && [settings[@"custom4GString"] length] > 0) return settings[@"custom4GString"];
+        if (value == 99 && [settings[@"custom4GString"] length] > 0) {
+            return settings[@"custom4GString"];
+        }
     }
     return nil;
 }
@@ -66,32 +69,6 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     if (font != nil) {
         // Exact 4.0.19 behavior: preserve the native family/weight and
         // reproduce the compact suffix metrics from the host font.
-        attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
-                                                                  size:MAX(1.0, font.pointSize * 0.58)];
-    }
-    [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
-    return attributes;
-}
-
-static NSDictionary *DLSFourGRegularAttributes(NSDictionary *baseAttributes)
-{
-    NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
-    UIFont *font = attributes[NSFontAttributeName];
-    if (font != nil) {
-        // LTE/LTE+ is a heavy carrier run on this iOS 17 renderer. Use the
-        // actual system Regular face rather than merely stripping a symbolic
-        // trait (which does not remove the descriptor's weight axis).
-        attributes[NSFontAttributeName] = [UIFont systemFontOfSize:font.pointSize
-                                                             weight:UIFontWeightRegular];
-    }
-    return attributes;
-}
-
-static NSDictionary *DLSFourGCompactAttributes(NSDictionary *bodyAttributes)
-{
-    NSMutableDictionary *attributes = [DLSFourGRegularAttributes(bodyAttributes) mutableCopy];
-    UIFont *font = attributes[NSFontAttributeName];
-    if (font != nil) {
         attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
                                                                   size:MAX(1.0, font.pointSize * 0.58)];
     }
@@ -132,28 +109,27 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
         return updated;
     }
 
-    // 4G is independent from the locked 5G renderer. Normalize the 4G
-    // carrier body to Regular; special 4G+ / 4Gᴀ labels then give only
-    // their final glyph the compact size. Custom 4G text uses Regular body
-    // metrics throughout instead of inheriting the heavy LTE+ host run.
-    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
-    BOOL compact4GSuffix = [replacement isEqualToString:@"4G+"] ||
-                           [replacement isEqualToString:@"4Gᴀ"];
-    if (compact4GSuffix || fourGMode == 99) {
-        NSDictionary *regularBodyAttributes = DLSFourGRegularAttributes(prefixAttributes);
-        if (compact4GSuffix) {
-            NSDictionary *compactSuffixAttributes = DLSFourGCompactAttributes(regularBodyAttributes);
-            NSUInteger prefixLength = 2;
-            [updated setAttributes:regularBodyAttributes range:NSMakeRange(0, prefixLength)];
-            [updated setAttributes:compactSuffixAttributes
-                             range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
-        } else {
-            [updated setAttributes:regularBodyAttributes range:NSMakeRange(0, replacement.length)];
-        }
+    // 4.0.19: non-5G text is passed through with its native attributes.
+    // This preserves the working native 4G+ renderer and custom 4G body.
+    if (!compact5GSuffix) {
+        [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
 
-    [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
+    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
+    [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
+
+    NSDictionary *suffixAttributes = nil;
+    if (source.length > 2) {
+        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
+    }
+    if (suffixAttributes == nil) {
+        suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+    }
+    if (replacement.length > prefixLength) {
+        [updated setAttributes:suffixAttributes
+                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+    }
     return updated;
 }
 
@@ -176,23 +152,8 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
                                                                                  attributes:prefix];
 
     // Fallback is only used when SystemStatusUI has no attributed run yet.
-    // Match the 4G renderer above: never let an LTE+ heavy host leak into
-    // 4G+, 4Gᴀ, or custom 4G text. The 5G fallback remains unchanged.
-    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
-    BOOL compact4G = [replacement isEqualToString:@"4G+"] ||
-                     [replacement isEqualToString:@"4Gᴀ"];
-    if ((compact4G || fourGMode == 99) && font != nil) {
-        NSDictionary *regularBody = DLSFourGRegularAttributes(prefix);
-        if (compact4G) {
-            NSDictionary *compactSuffix = DLSFourGCompactAttributes(regularBody);
-            [result setAttributes:regularBody range:NSMakeRange(0, 2)];
-            [result setAttributes:compactSuffix range:NSMakeRange(2, replacement.length - 2)];
-        } else {
-            [result setAttributes:regularBody range:NSMakeRange(0, replacement.length)];
-        }
-        return result;
-    }
-
+    // 4.0.19 only applies the compact fallback to 5Gᴀ; 4G custom text
+    // inherits the native 4G body attributes unchanged.
     NSMutableDictionary *suffix = [prefix mutableCopy];
     BOOL compactSuffix = [replacement isEqualToString:@"5Gᴀ"];
     if (compactSuffix && font != nil) {
@@ -355,15 +316,14 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 3:
                 return NewConnectionLteA;
             case 4:
-                // Use the native LTE+ host so iOS supplies the real 4G
-                // compact suffix attributed run.
+                // Native LTE+ is the working 4G+ renderer.
                 return NewConnectionLtePlus;
             case 10:
-                // 4Gᴀ uses the same LTE+ host; only the final text changes.
-                return NewConnectionLtePlus;
+                // 4Gᴀ uses the same 4G host; only legacy text changes.
+                return connectionType;
             case 99:
-                // Custom 4G also needs the LTE+ suffix attributes.
-                return NewConnectionLtePlus;
+                // Custom 4G stays on the original 4G host.
+                return connectionType;
             case 5:
                 return NewConnection5GE;
             case 6:
