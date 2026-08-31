@@ -57,6 +57,22 @@ static BOOL DLSUsesSystemStatusUI(void)
     return NSClassFromString(@"STUIStatusBarStringView") != nil;
 }
 
+static UIFont *DLSRegularStatusFont(UIFont *referenceFont)
+{
+    if (referenceFont == nil) return nil;
+    CGFloat size = referenceFont.pointSize;
+    NSArray<UIFont *> *candidates = @[
+        [UIFont fontWithName:@".SFUI-Regular" size:size],
+        [UIFont fontWithName:@"SFProText-Regular" size:size],
+        [UIFont fontWithName:@"HelveticaNeue-Regular" size:size],
+        [UIFont systemFontOfSize:size weight:UIFontWeightRegular]
+    ];
+    for (UIFont *candidate in candidates) {
+        if (candidate != nil) return candidate;
+    }
+    return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
+}
+
 static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
 {
     if (nativeSuffixFont == nil) return nil;
@@ -69,7 +85,6 @@ static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
     NSArray<UIFont *> *candidates = @[
         [UIFont fontWithName:@".SFUI-Regular" size:size],
         [UIFont fontWithName:@"SFProText-Regular" size:size],
-        [UIFont fontWithName:@"HelveticaNeue" size:size],
         [UIFont fontWithName:@"HelveticaNeue-Regular" size:size],
         [UIFont systemFontOfSize:size weight:UIFontWeightRegular]
     ];
@@ -82,7 +97,7 @@ static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
             return candidate;
         }
     }
-    return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
+    return DLSRegularStatusFont(nativeSuffixFont);
 }
 
 static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
@@ -98,32 +113,74 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     return attributes;
 }
 
+static NSDictionary *DLSCompactRegularSuffixAttributes(NSDictionary *baseAttributes)
+{
+    NSMutableDictionary *attributes = [DLSCompactSuffixAttributes(baseAttributes) mutableCopy];
+    UIFont *compactFont = attributes[NSFontAttributeName];
+    if (compactFont == nil) {
+        compactFont = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
+        attributes[NSFontAttributeName] = compactFont;
+    }
+    UIFont *regularFont = DLSRegularStatusFont(compactFont);
+    if (regularFont != nil) attributes[NSFontAttributeName] = regularFont;
+    return attributes;
+}
+
+static BOOL DLSNativeCompactSource(NSString *text)
+{
+    return [text isEqualToString:@"5G+"] ||
+           [text isEqualToString:@"5G Plus"] ||
+           [text isEqualToString:@"5G UC"] ||
+           [text isEqualToString:@"5G UW"] ||
+           [text isEqualToString:@"5G UWB"];
+}
+
+static BOOL DLSFourGSource(NSString *text)
+{
+    return [@[@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE"] containsObject:text];
+}
+
+static BOOL DLSFiveGSource(NSString *text)
+{
+    return [@[@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GA", @"5Gᴀ"] containsObject:text];
+}
+
 static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
 {
     if (replacement.length == 0) return source;
 
     NSMutableAttributedString *updated = [[NSMutableAttributedString alloc] initWithString:replacement];
-    if (source.length == 0) return updated;
-
-    NSRange prefixRange = NSMakeRange(0, 0);
-    NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
+    NSString *sourceString = source.string ?: @"";
+    NSDictionary *prefixAttributes = source.length > 0 ? [source attributesAtIndex:0 effectiveRange:NULL] : @{};
+    NSDictionary *customSettings = DLSSettings();
+    BOOL source4G = DLSFourGSource(sourceString);
+    BOOL source5G = DLSFiveGSource(sourceString);
+    BOOL customMode = (source4G && [customSettings[@"4G"] integerValue] == 99) ||
+                      (source5G && [customSettings[@"5G"] integerValue] == 99);
     BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"];
+
+    // Arbitrary custom text is still rendered with the same thin compact
+    // status-bar font instead of inheriting the bold carrier label.
+    if (!compactSuffix && customMode) {
+        [updated setAttributes:DLSCompactRegularSuffixAttributes(prefixAttributes) range:NSMakeRange(0, replacement.length)];
+        return updated;
+    }
     if (!compactSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
 
-    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
+    NSUInteger prefixLength = [replacement hasPrefix:@"4G"] || [replacement hasPrefix:@"5G"] ? 2 : 0;
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // SystemStatusUI gives native 5G+/5G UC a separate compact suffix run.
-    // Keep its size, color, kerning and baseline; only ᴀ receives a glyph
-    // font with verified U+1D00 coverage so CoreText cannot fall back bold.
-    // Native 5G+/5G UC provides a compact suffix run only when the source
-    // already has one. For a plain 4G/5G host, construct the same compact
-    // metrics from the prefix instead of inheriting the full-size last glyph.
-    NSDictionary *nativeSuffix = source.length > 2 ? [source attributesAtIndex:source.length - 1 effectiveRange:NULL] : nil;
-    NSMutableDictionary *suffixAttributes = nativeSuffix != nil ? [nativeSuffix mutableCopy] : [DLSCompactSuffixAttributes(prefixAttributes) mutableCopy];
+    // Reuse only the real native compact run. A plain 4G/5G host must use a
+    // compact Regular font; copying its last bold body glyph caused the
+    // reported 4G+ / 4Gᴀ / 5Gᴀ mismatch.
+    NSDictionary *nativeSuffix = nil;
+    if (DLSNativeCompactSource(sourceString) && source.length > prefixLength) {
+        nativeSuffix = [source attributesAtIndex:source.length - 1 effectiveRange:NULL];
+    }
+    NSMutableDictionary *suffixAttributes = nativeSuffix != nil ? [nativeSuffix mutableCopy] : [DLSCompactRegularSuffixAttributes(prefixAttributes) mutableCopy];
     if ([replacement hasSuffix:@"ᴀ"]) {
         UIFont *nativeFont = suffixAttributes[NSFontAttributeName];
         UIFont *regularFont = DLSRegularGlyphFont(nativeFont);
