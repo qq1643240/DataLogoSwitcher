@@ -87,25 +87,58 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     // original third-character attributes contain the real compact font,
     // kern and baseline behavior; do not substitute a named system font.
     BOOL compact5GSuffix = [replacement hasPrefix:@"5G"];
-    if (!compact5GSuffix) {
-        [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
+    // 5G path is intentionally unchanged and remains locked.
+    if (compact5GSuffix) {
+        NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
+        [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
+
+        NSDictionary *suffixAttributes = nil;
+        if (source.length > 2) {
+            suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
+        }
+        if (suffixAttributes == nil) {
+            suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+        }
+        if (replacement.length > prefixLength) {
+            [updated setAttributes:suffixAttributes
+                             range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        }
         return updated;
     }
 
-    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
-    [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
+    // 4G+ / 4Gᴀ use the same two-part layout, but must stay on the
+    // 4G text path. Never route these through the locked 5G channel.
+    BOOL compact4GSuffix = [replacement isEqualToString:@"4G+"] ||
+                           [replacement isEqualToString:@"4Gᴀ"];
+    if (compact4GSuffix) {
+        NSUInteger prefixLength = 2;
+        [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    NSDictionary *suffixAttributes = nil;
-    if (source.length > 2) {
-        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
-    }
-    if (suffixAttributes == nil) {
-        suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
-    }
-    if (replacement.length > prefixLength) {
+        NSDictionary *suffixAttributes = nil;
+        NSString *sourceString = source.string ?: @"";
+        NSUInteger sourceSuffixIndex = 0;
+        if ([sourceString hasPrefix:@"4G"] && source.length > 2) {
+            sourceSuffixIndex = 2;
+        } else if ([sourceString hasPrefix:@"LTE"] && source.length > 3) {
+            sourceSuffixIndex = 3;
+        }
+        if (sourceSuffixIndex > 0) {
+            NSDictionary *candidate = [source attributesAtIndex:sourceSuffixIndex effectiveRange:NULL];
+            if (![candidate isEqualToDictionary:prefixAttributes]) {
+                suffixAttributes = candidate;
+            }
+        }
+        if (suffixAttributes == nil) {
+            suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
+        }
         [updated setAttributes:suffixAttributes
                          range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        return updated;
     }
+
+    // 4G custom text remains on the normal 4G body style. This is deliberately
+    // separate from the locked 5G path above.
+    [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
     return updated;
 }
 
@@ -126,7 +159,10 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
 
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
     NSMutableDictionary *suffix = [prefix mutableCopy];
-    if (replacement.length > 2 && [replacement hasPrefix:@"5G"] && font != nil) {
+    BOOL compactSuffix = [replacement isEqualToString:@"5Gᴀ"] ||
+                         [replacement isEqualToString:@"4G+"] ||
+                         [replacement isEqualToString:@"4Gᴀ"];
+    if (compactSuffix && font != nil) {
         suffix[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
                                                              size:MAX(1.0, font.pointSize * 0.58)];
         [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
@@ -286,12 +322,15 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 3:
                 return NewConnectionLteA;
             case 4:
-                // Keep the real 4G host. Some iOS 17 SystemStatusUI builds
-                // do not render the private LTE+ enum and show '?'.
-                return connectionType;
+                // Use the native LTE+ host so iOS supplies the real 4G
+                // compact suffix attributed run.
+                return NewConnectionLtePlus;
             case 10:
-                // 4Gᴀ is rendered in the final text layer on this 4G host.
-                return connectionType;
+                // 4Gᴀ uses the same LTE+ host; only the final text changes.
+                return NewConnectionLtePlus;
+            case 99:
+                // Custom 4G also needs the LTE+ suffix attributes.
+                return NewConnectionLtePlus;
             case 5:
                 return NewConnection5GE;
             case 6:
@@ -379,6 +418,15 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
         connectionType == NewConnection5GE) &&
         [defaults[@"4G"] intValue] == 10) {
         if (!DLSUsesSystemStatusUI()) return @"4Gᴀ";
+    }
+
+    if ((connectionType == NewConnection4GOverride ||
+        connectionType == NewConnectionLte ||
+        connectionType == NewConnectionLteA ||
+        connectionType == NewConnectionLtePlus ||
+        connectionType == NewConnection5GE) &&
+        [defaults[@"4G"] intValue] == 99) {
+        if (!DLSUsesSystemStatusUI()) return defaults[@"custom4GString"] ?: @"4G";
     }
 
     if ((connectionType == NewConnection5G ||
