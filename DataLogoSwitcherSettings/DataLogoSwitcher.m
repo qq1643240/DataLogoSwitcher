@@ -53,7 +53,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"自定义"
+                @"自设"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
@@ -65,7 +65,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"自定义"
+                @"自设"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
@@ -77,7 +77,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"自定义"
+                @"自设"
             ] forKeys:logo4G.values];
         }
         else {
@@ -103,7 +103,7 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"5G UWB",
                 @"5G UC",
                 @"5Gᴀ",
-                @"自定义"
+                @"自设"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
             [specifiers addObject:logo5G];
@@ -119,22 +119,22 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"5G",
                 @"5G+",
                 @"5G UWB",
-                @"自定义"
+                @"自设"
             ] forKeys:logo5G.values];
             [logo5G setProperty:@"kListValue" forKey:@"key"];
             [specifiers addObject:logo5G];
         }
 
-        PSSpecifier *customStringGroup = [PSSpecifier groupSpecifierWithName:@"自定义标识"];
-        [customStringGroup setProperty:@"先在上方为对应网络选择“自定义”，再填写显示文字。" forKey:@"footerText"];
+        PSSpecifier *customStringGroup = [PSSpecifier groupSpecifierWithName:@"自设标识"];
+        [customStringGroup setProperty:@"先在上方为对应网络选择“自设”，再填写显示文字。" forKey:@"footerText"];
         [specifiers addObject:customStringGroup];
 
-        PSSpecifier *custom4GStringCell = [PSSpecifier preferenceSpecifierNamed:@"4G 自定义" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
+        PSSpecifier *custom4GStringCell = [PSSpecifier preferenceSpecifierNamed:@"4G 自设" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
         [custom4GStringCell setIdentifier:@"custom4GString"];
         [specifiers addObject:custom4GStringCell];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G 自定义" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
+            PSSpecifier *custom5GStringCell = [PSSpecifier preferenceSpecifierNamed:@"5G 自设" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:nil cell:[PSTableCell cellTypeFromString:@"PSEditTextCell"] edit:nil];
             [custom5GStringCell setIdentifier:@"custom5GString"];
             [specifiers addObject:custom5GStringCell];
         }

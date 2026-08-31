@@ -13,16 +13,29 @@
 
 static NSDictionary *DLSSettings(void)
 {
-    NSDictionary *settings = [NSDictionary dictionaryWithContentsOfFile:SettingsPath];
-    return settings ?: @{};
+    // Status-bar setters can be called hundreds of times during Wi-Fi and
+    // radio transitions. Settings take effect after respring, so loading once
+    // per process is correct and avoids synchronous plist I/O on that path.
+    static NSDictionary *settings = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        settings = [[NSDictionary alloc] initWithContentsOfFile:SettingsPath] ?: @{};
+    });
+    return settings;
 }
 
 static NSString *DLSRewriteStatusText(NSString *text)
 {
     if (![text isKindOfClass:NSString.class] || text.length == 0) return nil;
+    static NSSet<NSString *> *fiveG = nil;
+    static NSSet<NSString *> *fourG = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
+        fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
+    });
     NSDictionary *settings = DLSSettings();
 
-    NSSet *fiveG = [NSSet setWithObjects:@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GE", @"5GA", @"5G-A", @"5G A", nil];
     if ([fiveG containsObject:text]) {
         NSInteger value = [settings[@"5G"] integerValue];
         NSString *custom = settings[@"custom5GString"];
@@ -30,17 +43,11 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
     if ([fourG containsObject:text]) {
         NSInteger value = [settings[@"4G"] integerValue];
         if (value == 4) return @"4G+";
         if (value == 10) return @"4Gᴀ";
         if (value == 99 && [settings[@"custom4GString"] length] > 0) return settings[@"custom4GString"];
-    }
-
-    NSSet *threeG = [NSSet setWithObjects:@"3G", @"H", @"H+", nil];
-    if ([threeG containsObject:text] && [settings[@"3G"] integerValue] == 99 && [settings[@"custom3GString"] length] > 0) {
-        return settings[@"custom3GString"];
     }
     return nil;
 }
@@ -78,8 +85,6 @@ static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
     return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
 }
 
-static __thread BOOL DLSApplyingText;
-
 static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
 {
     NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
@@ -114,9 +119,11 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     // SystemStatusUI gives native 5G+/5G UC a separate compact suffix run.
     // Keep its size, color, kerning and baseline; only ᴀ receives a glyph
     // font with verified U+1D00 coverage so CoreText cannot fall back bold.
-    NSDictionary *nativeSuffix = [source attributesAtIndex:source.length - 1 effectiveRange:NULL];
-    NSMutableDictionary *suffixAttributes = [nativeSuffix mutableCopy];
-    if (suffixAttributes == nil) suffixAttributes = [DLSCompactSuffixAttributes(prefixAttributes) mutableCopy];
+    // Native 5G+/5G UC provides a compact suffix run only when the source
+    // already has one. For a plain 4G/5G host, construct the same compact
+    // metrics from the prefix instead of inheriting the full-size last glyph.
+    NSDictionary *nativeSuffix = source.length > 2 ? [source attributesAtIndex:source.length - 1 effectiveRange:NULL] : nil;
+    NSMutableDictionary *suffixAttributes = nativeSuffix != nil ? [nativeSuffix mutableCopy] : [DLSCompactSuffixAttributes(prefixAttributes) mutableCopy];
     if ([replacement hasSuffix:@"ᴀ"]) {
         UIFont *nativeFont = suffixAttributes[NSFontAttributeName];
         UIFont *regularFont = DLSRegularGlyphFont(nativeFont);
@@ -128,112 +135,14 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
     return updated;
 }
 
-static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
-{
-    UIFont *font = nil;
-    if ([object respondsToSelector:@selector(font)]) {
-        font = ((id (*)(id, SEL))objc_msgSend)(object, @selector(font));
-    }
-    if (font == nil) font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
-    UIColor *color = nil;
-    if ([object respondsToSelector:@selector(textColor)]) {
-        color = ((id (*)(id, SEL))objc_msgSend)(object, @selector(textColor));
-    }
-
-    NSMutableDictionary *prefix = [NSMutableDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
-    if (color != nil) prefix[NSForegroundColorAttributeName] = color;
-
-    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
-    BOOL compact = replacement.length > 2 && ([replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"]);
-    if (compact) {
-        NSMutableDictionary *suffix = [DLSCompactSuffixAttributes(prefix) mutableCopy];
-        if ([replacement hasSuffix:@"ᴀ"]) {
-            UIFont *regular = DLSRegularGlyphFont(suffix[NSFontAttributeName]);
-            if (regular != nil) suffix[NSFontAttributeName] = regular;
-        }
-        [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
-    }
-    return result;
-}
-
-static BOOL DLSIsStatusBarObject(id object)
-{
-    id current = object;
-    for (NSUInteger depth = 0; current != nil && depth < 10; depth++) {
-        NSString *name = NSStringFromClass(object_getClass(current));
-        if ([name rangeOfString:@"StatusBar" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-            [name rangeOfString:@"STUI" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-            [name rangeOfString:@"Cellular" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            return YES;
-        }
-        current = [current respondsToSelector:@selector(superview)] ? [current superview] : nil;
-    }
-    return NO;
-}
-
-// iOS 17 moved the visible carrier text into SystemStatusUI.
+// iOS 17 supplies an attributed cellular label after updating its text.  Hook
+// only this one-way update: setText: and setAttributedText: must never call
+// each other during Wi-Fi/radio changes.
 %group GiOS17
 %hook STUIStatusBarStringView
-- (void)setText:(NSString *)text {
-    if (DLSApplyingText) {
-        %orig(text);
-        return;
-    }
-    // Some iOS 17 status views never call setAttributedText:. Commit an
-    // explicit attributed replacement so the private status font cannot turn
-    // ᴀ into '?' and the host label cannot overwrite custom text.
-    NSString *replacement = DLSRewriteStatusText(text);
-    if (replacement.length > 0) {
-        DLSApplyingText = YES;
-        ((void (*)(id, SEL, NSAttributedString *))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
-        DLSApplyingText = NO;
-        return;
-    }
-    %orig(text);
-}
 - (void)setAttributedText:(NSAttributedString *)text {
-    if (DLSApplyingText) {
-        %orig(text);
-        return;
-    }
     NSString *replacement = DLSRewriteStatusText(text.string);
     %orig(replacement.length > 0 ? DLSAttributedReplacement(text, replacement) : text);
-}
-%end
-
-// Some iOS 17 builds use a UILabel subclass for the final rendered text.
-%hook UILabel
-- (void)setText:(NSString *)text {
-    if (DLSApplyingText) {
-        %orig(text);
-        return;
-    }
-    // UILabel is the final renderer on some iOS 17 builds. Use an attributed
-    // string here too so 4Gᴀ/5Gᴀ has a font with a verified ᴀ glyph.
-    if (DLSIsStatusBarObject(self)) {
-        NSString *replacement = DLSRewriteStatusText(text);
-        if (replacement.length > 0) {
-            DLSApplyingText = YES;
-            [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
-            DLSApplyingText = NO;
-            return;
-        }
-    }
-    %orig(text);
-}
-- (void)setAttributedText:(NSAttributedString *)text {
-    if (DLSIsStatusBarObject(self)) {
-        if (DLSApplyingText) {
-            %orig(text);
-            return;
-        }
-        NSString *replacement = DLSRewriteStatusText(text.string);
-        if (replacement.length > 0) {
-            %orig(DLSAttributedReplacement(text, replacement));
-            return;
-        }
-    }
-    %orig(text);
 }
 %end
 %end

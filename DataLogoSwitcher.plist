@@ -3,7 +3,6 @@
 		Bundles = (
 			"com.apple.springboard",
 			"com.apple.SpringBoard",
-			"com.apple.UIKit",
 			"com.apple.SystemStatusServer",
 			"com.apple.SystemStatusUI",
 		);
