@@ -30,7 +30,7 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", @"5G+", nil];
+    NSSet *fourG = [NSSet setWithObjects:@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE", nil];
     if ([fourG containsObject:text]) {
         NSInteger value = [settings[@"4G"] integerValue];
         if (value == 4) return @"4G+";
@@ -328,10 +328,11 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 3:
                 return NewConnectionLteA;
             case 4:
-                // Reuse the native 5G+ compact attributed suffix renderer.
-                return NewConnection5GPlus;
+                // Keep the LTE-family host so 4G+ remains on the 4G path.
+                return NewConnectionLtePlus;
             case 10:
-                return NewConnection5GPlus;
+                // 4Gᴀ uses the same LTE+ compact-suffix host, not 5G+.
+                return NewConnectionLtePlus;
             case 5:
                 return NewConnection5GE;
             case 6:
@@ -657,8 +658,8 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
     }
     else
     {
-        // iOS 17 needs both hooks: GiOS13 selects the true cellular host
-        // (5G+/LTE+), while GiOS17 replaces only its attributed suffix.
+        // iOS 17 keeps the cellular host and rewrites only the final
+        // attributed glyphs: LTE+ for 4G+/4Gᴀ, 5G+ for 5Gᴀ.
         %init(GiOS13);
         %init(GiOS17);
     }
