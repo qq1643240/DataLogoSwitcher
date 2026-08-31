@@ -43,10 +43,11 @@ static NSString *DLSRewriteStatusText(NSString *text)
         if (value == 99 && custom.length > 0 && ![custom isEqualToString:text]) return custom;
     }
 
-    // 4.0.19: 4G+ remains entirely native through the LTE+ connection
-    // host. Only 4Gᴀ and custom 4G enter the text replacement path.
+    // 4G uses the same attributed-rendering pattern as the locked 5G
+    // path: create a native LTE+ host first, then replace its text.
     if ([fourG containsObject:text]) {
         NSInteger value = [settings[@"4G"] integerValue];
+        if (value == 4) return @"4G+";
         if (value == 10) return @"4Gᴀ";
         if (value == 99 && [settings[@"custom4GString"] length] > 0) {
             return settings[@"custom4GString"];
@@ -74,6 +75,47 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     }
     [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
     return attributes;
+}
+
+static NSDictionary *DLSFourGBodyAttributes(NSDictionary *sourceAttributes)
+{
+    NSMutableDictionary *attributes = [sourceAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
+    UIFont *sourceFont = attributes[NSFontAttributeName];
+    if (sourceFont != nil) {
+        // LTE+ supplies a carrier-weight run. 4G must use the same thin
+        // status-bar body treatment as 5G, without touching the 5G path.
+        attributes[NSFontAttributeName] = [UIFont systemFontOfSize:sourceFont.pointSize
+                                                             weight:UIFontWeightRegular];
+    }
+    [attributes removeObjectForKey:NSBaselineOffsetAttributeName];
+    return attributes;
+}
+
+static NSAttributedString *DLSAttributedFourGReplacement(NSAttributedString *source, NSString *replacement)
+{
+    NSMutableAttributedString *updated = [[NSMutableAttributedString alloc] initWithString:replacement];
+    if (source.length == 0 || replacement.length == 0) return updated;
+
+    NSDictionary *sourceBody = [source attributesAtIndex:0 effectiveRange:NULL] ?: @{};
+    NSDictionary *bodyAttributes = DLSFourGBodyAttributes(sourceBody);
+    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
+    BOOL compactSuffix = [replacement isEqualToString:@"4G+"] ||
+                         [replacement isEqualToString:@"4Gᴀ"] ||
+                         (fourGMode == 99 && [replacement hasPrefix:@"4G"] && replacement.length > 2);
+
+    if (!compactSuffix) {
+        [updated setAttributes:bodyAttributes range:NSMakeRange(0, replacement.length)];
+        return updated;
+    }
+
+    NSUInteger prefixLength = MIN((NSUInteger)2, (NSUInteger)replacement.length);
+    [updated setAttributes:bodyAttributes range:NSMakeRange(0, prefixLength)];
+    NSDictionary *suffixAttributes = DLSCompactSuffixAttributes(bodyAttributes);
+    if (replacement.length > prefixLength) {
+        [updated setAttributes:suffixAttributes
+                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+    }
+    return updated;
 }
 
 static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
@@ -107,6 +149,13 @@ static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, 
                              range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
         }
         return updated;
+    }
+
+    // 4G mirrors the established 5G split-run method, using LTE+ as its
+    // independent native host. This does not enter or alter the 5G branch.
+    BOOL fourGCustom = [DLSSettings()[@"4G"] integerValue] == 99;
+    if (([replacement hasPrefix:@"4G"] || fourGCustom) && source.length > 0) {
+        return DLSAttributedFourGReplacement(source, replacement);
     }
 
     // 4.0.19: non-5G text is passed through with its native attributes.
@@ -151,9 +200,23 @@ static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replac
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement
                                                                                  attributes:prefix];
 
-    // Fallback is only used when SystemStatusUI has no attributed run yet.
-    // 4.0.19 only applies the compact fallback to 5Gᴀ; 4G custom text
-    // inherits the native 4G body attributes unchanged.
+    // If iOS has not produced attributedText yet, construct the same 4G
+    // split-run fallback: a regular body plus compact suffix. This is kept
+    // entirely separate from the unchanged 5G fallback below.
+    NSInteger fourGMode = [DLSSettings()[@"4G"] integerValue];
+    BOOL fourGReplacement = fourGMode == 4 || fourGMode == 10 || fourGMode == 99;
+    if (fourGReplacement && font != nil) {
+        NSMutableDictionary *body = [prefix mutableCopy];
+        NSMutableDictionary *compact = DLSCompactSuffixAttributes(body).mutableCopy;
+        NSUInteger prefixLength = MIN((NSUInteger)2, (NSUInteger)replacement.length);
+        [result setAttributes:body range:NSMakeRange(0, prefixLength)];
+        if (replacement.length > prefixLength) {
+            [result setAttributes:compact range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        }
+        return result;
+    }
+
+    // 5G fallback remains unchanged.
     NSMutableDictionary *suffix = [prefix mutableCopy];
     BOOL compactSuffix = [replacement isEqualToString:@"5Gᴀ"];
     if (compactSuffix && font != nil) {
@@ -319,11 +382,12 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
                 // Native LTE+ is the working 4G+ renderer.
                 return NewConnectionLtePlus;
             case 10:
-                // 4Gᴀ uses the same 4G host; only legacy text changes.
-                return connectionType;
+                // 4Gᴀ: use LTE+ as the native attributed host, then replace
+                // only its text in DLSAttributedFourGReplacement.
+                return NewConnectionLtePlus;
             case 99:
-                // Custom 4G stays on the original 4G host.
-                return connectionType;
+                // Custom 4G uses the same LTE+ host and split-run rendering.
+                return NewConnectionLtePlus;
             case 5:
                 return NewConnection5GE;
             case 6:
