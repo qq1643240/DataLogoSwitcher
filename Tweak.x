@@ -185,7 +185,7 @@ static BOOL DLSIsStatusBarObject(id object)
     NSString *replacement = DLSRewriteStatusText(text);
     if (replacement.length > 0) {
         DLSApplyingText = YES;
-        [self setAttributedText:DLSFallbackAttributedText(self, replacement)];
+        ((void (*)(id, SEL, NSAttributedString *))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
         DLSApplyingText = NO;
         return;
     }

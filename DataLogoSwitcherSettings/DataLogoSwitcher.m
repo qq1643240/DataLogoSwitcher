@@ -40,12 +40,12 @@ static BOOL run_command(const char *path, char *const argv[])
 
         NSMutableArray *specifiers = [NSMutableArray array];
 
-        [specifiers addObject:[PSSpecifier emptyGroupSpecifier]];
+        [specifiers addObject:[PSSpecifier groupSpecifierWithName:@"网络标识"]];
         PSSpecifier *logo4G = [PSSpecifier preferenceSpecifierNamed:@"4G 标识" target:self set:@selector(setValue:forSpecifier:) get:@selector(getValueForSpecifier:) detail:NSClassFromString(@"PSListItemsController") cell:[PSTableCell cellTypeFromString:@"PSLinkListCell"] edit:nil];
 		[logo4G setIdentifier:@"4G"];
 
         if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@6,@7,@8,@9,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -53,16 +53,11 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"5GE",
-                @"5G",
-                @"5G+",
-                @"5G UWB",
-                @"5G UC",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@6,@7,@8,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -70,15 +65,11 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"5GE",
-                @"5G",
-                @"5G+",
-                @"5G UWB",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
         else if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_2) {
-            logo4G.values = @[@0,@1,@2,@3,@4,@10,@5,@99];
+            logo4G.values = @[@0,@1,@2,@3,@4,@10,@99];
             logo4G.titleDictionary = [NSDictionary dictionaryWithObjects:@[
                 @"默认",
                 @"4G",
@@ -86,7 +77,6 @@ static BOOL run_command(const char *path, char *const argv[])
                 @"LTE-A",
                 @"4G+",
                 @"4Gᴀ",
-                @"5GE",
                 @"自定义"
             ] forKeys:logo4G.values];
         }
