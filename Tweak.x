@@ -57,55 +57,15 @@ static BOOL DLSUsesSystemStatusUI(void)
     return NSClassFromString(@"STUIStatusBarStringView") != nil;
 }
 
-static UIFont *DLSRegularStatusFont(UIFont *referenceFont)
-{
-    if (referenceFont == nil) return nil;
-    CGFloat size = referenceFont.pointSize;
-    NSArray<UIFont *> *candidates = @[
-        [UIFont fontWithName:@".SFUI-Regular" size:size],
-        [UIFont fontWithName:@"SFProText-Regular" size:size],
-        [UIFont fontWithName:@"HelveticaNeue-Regular" size:size],
-        [UIFont systemFontOfSize:size weight:UIFontWeightRegular]
-    ];
-    for (UIFont *candidate in candidates) {
-        if (candidate != nil) return candidate;
-    }
-    return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
-}
-
-static UIFont *DLSRegularGlyphFont(UIFont *nativeSuffixFont)
-{
-    if (nativeSuffixFont == nil) return nil;
-
-    // The native compact '+' font is a status-bar subset font. It often has
-    // no U+1D00, so changing its descriptor weight still triggers a heavy
-    // fallback. Select a true Regular system font that contains ᴀ, keeping
-    // the native compact run's exact point size and other attributes intact.
-    CGFloat size = nativeSuffixFont.pointSize;
-    NSArray<UIFont *> *candidates = @[
-        [UIFont fontWithName:@".SFUI-Regular" size:size],
-        [UIFont fontWithName:@"SFProText-Regular" size:size],
-        [UIFont fontWithName:@"HelveticaNeue-Regular" size:size],
-        [UIFont systemFontOfSize:size weight:UIFontWeightRegular]
-    ];
-    unichar character = 0x1D00; // LATIN LETTER SMALL CAPITAL A (ᴀ)
-    for (UIFont *candidate in candidates) {
-        if (candidate == nil) continue;
-        CGGlyph glyph = 0;
-        CTFontRef font = (__bridge CTFontRef)candidate;
-        if (CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) && glyph != 0) {
-            return candidate;
-        }
-    }
-    return DLSRegularStatusFont(nativeSuffixFont);
-}
+static __thread BOOL DLSApplyingText;
 
 static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
 {
     NSMutableDictionary *attributes = [baseAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
     UIFont *font = attributes[NSFontAttributeName];
     if (font != nil) {
-        // Match the native compact suffix used by the working 5Gᴀ path.
+        // Exact 4.0.19 behavior: preserve the native family/weight and
+        // reproduce the compact suffix metrics from the host font.
         attributes[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
                                                                   size:MAX(1.0, font.pointSize * 0.58)];
     }
@@ -113,101 +73,97 @@ static NSDictionary *DLSCompactSuffixAttributes(NSDictionary *baseAttributes)
     return attributes;
 }
 
-static NSDictionary *DLSCompactRegularSuffixAttributes(NSDictionary *baseAttributes)
-{
-    NSMutableDictionary *attributes = [DLSCompactSuffixAttributes(baseAttributes) mutableCopy];
-    UIFont *compactFont = attributes[NSFontAttributeName];
-    if (compactFont == nil) {
-        compactFont = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
-        attributes[NSFontAttributeName] = compactFont;
-    }
-    UIFont *regularFont = DLSRegularStatusFont(compactFont);
-    if (regularFont != nil) attributes[NSFontAttributeName] = regularFont;
-    return attributes;
-}
-
-static BOOL DLSNativeCompactSource(NSString *text)
-{
-    return [text isEqualToString:@"5G+"] ||
-           [text isEqualToString:@"5G Plus"] ||
-           [text isEqualToString:@"5G UC"] ||
-           [text isEqualToString:@"5G UW"] ||
-           [text isEqualToString:@"5G UWB"];
-}
-
-static BOOL DLSFourGSource(NSString *text)
-{
-    return [@[@"4G", @"4G+", @"LTE", @"LTE+", @"LTE-A", @"5GE"] containsObject:text];
-}
-
-static BOOL DLSFiveGSource(NSString *text)
-{
-    return [@[@"5G", @"5G+", @"5G Plus", @"5G UC", @"5G UW", @"5G UWB", @"5GA", @"5Gᴀ"] containsObject:text];
-}
-
 static NSAttributedString *DLSAttributedReplacement(NSAttributedString *source, NSString *replacement)
 {
     if (replacement.length == 0) return source;
 
     NSMutableAttributedString *updated = [[NSMutableAttributedString alloc] initWithString:replacement];
-    NSString *sourceString = source.string ?: @"";
-    NSDictionary *prefixAttributes = source.length > 0 ? [source attributesAtIndex:0 effectiveRange:NULL] : @{};
-    NSDictionary *customSettings = DLSSettings();
-    BOOL source4G = DLSFourGSource(sourceString);
-    BOOL source5G = DLSFiveGSource(sourceString);
-    BOOL customMode = (source4G && [customSettings[@"4G"] integerValue] == 99) ||
-                      (source5G && [customSettings[@"5G"] integerValue] == 99);
-    BOOL compactSuffix = [replacement hasPrefix:@"5G"] || [replacement hasPrefix:@"4G+"] || [replacement hasPrefix:@"4Gᴀ"];
+    if (source.length == 0) return updated;
 
-    // Arbitrary custom text is still rendered with the same thin compact
-    // status-bar font instead of inheriting the bold carrier label.
-    if (!compactSuffix && customMode) {
-        [updated setAttributes:DLSCompactRegularSuffixAttributes(prefixAttributes) range:NSMakeRange(0, replacement.length)];
-        return updated;
-    }
-    if (!compactSuffix) {
+    NSRange prefixRange = NSMakeRange(0, 0);
+    NSDictionary *prefixAttributes = [source attributesAtIndex:0 effectiveRange:&prefixRange] ?: @{};
+
+    // 4.0.19 uses the native 5G+ run as the authoritative style. The
+    // original third-character attributes contain the real compact font,
+    // kern and baseline behavior; do not substitute a named system font.
+    BOOL compact5GSuffix = [replacement hasPrefix:@"5G"];
+    if (!compact5GSuffix) {
         [updated setAttributes:prefixAttributes range:NSMakeRange(0, replacement.length)];
         return updated;
     }
 
-    NSUInteger prefixLength = [replacement hasPrefix:@"4G"] || [replacement hasPrefix:@"5G"] ? 2 : 0;
+    NSUInteger prefixLength = MIN((NSUInteger)replacement.length, (NSUInteger)2);
     [updated setAttributes:prefixAttributes range:NSMakeRange(0, prefixLength)];
 
-    // Reuse only the real native compact run. A plain 4G/5G host must use a
-    // compact Regular font; copying its last bold body glyph caused the
-    // reported 4G+ / 4Gᴀ / 5Gᴀ mismatch.
-    NSDictionary *nativeSuffix = nil;
-    if (DLSNativeCompactSource(sourceString) && source.length > prefixLength) {
-        nativeSuffix = [source attributesAtIndex:source.length - 1 effectiveRange:NULL];
+    NSDictionary *suffixAttributes = nil;
+    if (source.length > 2) {
+        suffixAttributes = [source attributesAtIndex:2 effectiveRange:NULL];
     }
-    NSMutableDictionary *suffixAttributes = nativeSuffix != nil ? [nativeSuffix mutableCopy] : [DLSCompactRegularSuffixAttributes(prefixAttributes) mutableCopy];
-    if ([replacement hasSuffix:@"ᴀ"]) {
-        UIFont *nativeFont = suffixAttributes[NSFontAttributeName];
-        UIFont *regularFont = DLSRegularGlyphFont(nativeFont);
-        if (regularFont != nil) suffixAttributes[NSFontAttributeName] = regularFont;
+    if (suffixAttributes == nil) {
+        suffixAttributes = DLSCompactSuffixAttributes(prefixAttributes);
     }
     if (replacement.length > prefixLength) {
-        [updated setAttributes:suffixAttributes range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
+        [updated setAttributes:suffixAttributes
+                         range:NSMakeRange(prefixLength, replacement.length - prefixLength)];
     }
     return updated;
 }
 
+static NSAttributedString *DLSFallbackAttributedText(id object, NSString *replacement)
+{
+    UIFont *font = nil;
+    if ([object respondsToSelector:@selector(font)]) {
+        font = ((id (*)(id, SEL))objc_msgSend)(object, @selector(font));
+    }
+    UIColor *color = nil;
+    if ([object respondsToSelector:@selector(textColor)]) {
+        color = ((id (*)(id, SEL))objc_msgSend)(object, @selector(textColor));
+    }
+
+    NSMutableDictionary *prefix = [NSMutableDictionary dictionary];
+    if (font != nil) prefix[NSFontAttributeName] = font;
+    if (color != nil) prefix[NSForegroundColorAttributeName] = color;
+
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:replacement attributes:prefix];
+    NSMutableDictionary *suffix = [prefix mutableCopy];
+    if (replacement.length > 2 && [replacement hasPrefix:@"5G"] && font != nil) {
+        suffix[NSFontAttributeName] = [UIFont fontWithDescriptor:font.fontDescriptor
+                                                             size:MAX(1.0, font.pointSize * 0.58)];
+        [result setAttributes:suffix range:NSMakeRange(2, replacement.length - 2)];
+    }
+    return result;
+}
+
 // iOS 17 may send the final cellular label through setText: without a later
-// attributed update. Replace only the argument passed to the original method;
-// never call setAttributedText: here, so Wi-Fi/radio transitions cannot loop.
+// attributed update. Use the 4.0.19 path: preserve the current native
+// attributed run, then replace only the visible string with a recursion guard.
 %group GiOS17
 %hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
     NSString *replacement = DLSRewriteStatusText(text);
+    if (replacement.length > 0 && !DLSApplyingText) {
+        id currentAttributed = ((id (*)(id, SEL))objc_msgSend)(self, @selector(attributedText));
+        if ([currentAttributed isKindOfClass:NSAttributedString.class] && [(NSAttributedString *)currentAttributed length] > 0) {
+            DLSApplyingText = YES;
+            ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSAttributedReplacement(currentAttributed, replacement));
+            DLSApplyingText = NO;
+            return;
+        }
+        if (((BOOL (*)(id, SEL, SEL))objc_msgSend)(self, @selector(respondsToSelector:), @selector(setAttributedText:))) {
+            DLSApplyingText = YES;
+            ((void (*)(id, SEL, id))objc_msgSend)(self, @selector(setAttributedText:), DLSFallbackAttributedText(self, replacement));
+            DLSApplyingText = NO;
+            return;
+        }
+    }
     %orig(replacement.length > 0 ? replacement : text);
 }
 - (void)setAttributedText:(NSAttributedString *)text {
-    NSString *replacement = DLSRewriteStatusText(text.string);
-    // When setText: has already supplied 4Gᴀ/5Gᴀ, apply a glyph-safe suffix
-    // font if SystemStatusUI follows with its attributed refresh.
-    if (replacement.length == 0 && [text.string hasSuffix:@"ᴀ"]) {
-        replacement = text.string;
+    if (DLSApplyingText) {
+        %orig(text);
+        return;
     }
+    NSString *replacement = DLSRewriteStatusText(text.string);
     %orig(replacement.length > 0 ? DLSAttributedReplacement(text, replacement) : text);
 }
 %end
@@ -369,12 +325,12 @@ typedef NS_ENUM(NSInteger, newConnectionType) {
             case 4:
                 return NewConnection5GUC;
             case 5:
-                // Keep the actual 5G-family host; iOS 17 rewrites the final
-                // glyphs to 5Gᴀ with a font that contains U+1D00.
-                return connectionType;
+                // 4.0.19: use native 5G+ as the host so SystemStatusUI
+                // creates the compact suffix attributed run.
+                return NewConnection5GPlus;
             case 99:
-                // Custom 5G text must not force the status bar into 5G+.
-                return connectionType;
+                // Custom 5G text uses the same native 5G+ host attributes.
+                return NewConnection5GPlus;
         }
     }
 
